@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { supabase } from "../supabase";
 
 const AuthCtx = createContext({ user: null as any, pending: true });
@@ -30,3 +31,17 @@ export function useAuth() {
 export const signOutUser = async () => {
   await supabase.auth.signOut();
 };
+
+export function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { user, pending } = useAuth();
+
+  if (pending) {
+    return <div>Loading...</div>; // Jab tak auth check ho raha hai
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />; // Agar login nahi hai toh wapas bhej do
+  }
+
+  return <>{children}</>;
+}
