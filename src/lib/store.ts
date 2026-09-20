@@ -120,8 +120,22 @@ export async function saveBill(uid: string, bill: Omit<Bill, "id"> & { id?: stri
     savedId = data.id;
   }
 
-  // Send Telegram Notification on new bill creation
-  await sendTelegramNotification(`📦 *New Bill Created!*\nTotal: ₹${bill.total}\nType: ${bill.saleType}`);
+  // TELEGRAM LOGIC: Ignore Cash (walkin) completely. Only alert on Credit or Prepaid.
+  if (bill.saleType !== "walkin") {
+    const typeStr = bill.saleType === "credit_delivery" ? "Credit Sale" : "Prepaid Order";
+    const itemsStr = bill.lines.map((l: any) => `${l.itemName} (${l.kg}kg)`).join(", ");
+    
+    // Fetch up-to-date balance for credit customers
+    let balStr = "";
+    if (bill.partyId && bill.saleType === "credit_delivery") {
+      const { data: updatedParty } = await supabase.from("parties").select("currentBalance").eq("id", bill.partyId).single();
+      const bal = updatedParty?.currentBalance || 0;
+      balStr = `\n⚖️ New Balance: ${bal > 0 ? bal + " Dr" : Math.abs(bal) + " Cr"}`;
+    }
+
+    const msg = `📝 *${typeStr}*\n👤 Customer: ${bill.customerName}\n📦 Items: ${itemsStr}\n💰 Bill Amount: ₹${bill.total}${balStr}`;
+    await sendTelegramNotification(msg);
+  }
 
   return savedId;
 }
@@ -220,6 +234,21 @@ export async function saveMoney(uid: string, entry: Omit<MoneyEntry, "id">, id?:
       await supabase.from("parties").update({ currentBalance: (p.currentBalance || 0) + delta }).eq("id", entry.partyId);
     }
   }
+  
+  // TELEGRAM LOGIC: Trigger alert for Ledger Payments with live balance
+  if (entry.partyId && (entry.type === "payment_in" || entry.type === "payment_out")) {
+    const actionStr = entry.type === "payment_in" ? "Received from" : "Paid to";
+    const icon = entry.type === "payment_in" ? "🟢" : "🔴";
+    
+    // Fetch live updated balance directly from database
+    const { data: updatedParty } = await supabase.from("parties").select("currentBalance").eq("id", entry.partyId).single();
+    const bal = updatedParty?.currentBalance || 0;
+    const balStr = bal > 0 ? `${bal} Dr` : `${Math.abs(bal)} Cr`;
+
+    const msg = `${icon} *Ledger Payment*\n👤 Party: ${entry.partyName}\n💸 Amount ${actionStr}: ₹${entry.amount}\n⚖️ Updated Balance: ${balStr}`;
+    await sendTelegramNotification(msg);
+  }
+
   return moneyId;
 }
 
