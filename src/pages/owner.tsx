@@ -9,21 +9,69 @@ import { formatINR, formatKg, todayISO } from "@/lib/utils";
 const n = (x: string) => Number(x) || 0;
 const getYesterdayISO = () => new Date(Date.now() - 86400000).toISOString().split("T")[0];
 
-// Standard Accounting Helper for Dr (Debit/Receivable) and Cr (Credit/Payable)
 const formatPartyBal = (bal: number) => {
   if (!bal) return formatINR(0);
   return bal > 0 ? `${formatINR(bal)} Dr` : `${formatINR(Math.abs(bal))} Cr`;
+};
+
+// Gate Pass Printer Helper
+const printGatePass = (data: { date: string; customerName: string; saleType: string; lines: BillLine[]; deliveryCharge: number; total: number }) => {
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(`
+    <html>
+      <head>
+        <title>Gate Pass - United Coal Depot</title>
+        <style>
+          body { font-family: monospace; padding: 20px; color: #000; }
+          h2, h4 { margin: 0 0 5px 0; }
+          table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+          th, td { border-bottom: 1px dashed #000; padding: 6px; text-align: left; font-size: 14px; }
+          .text-right { text-align: right; }
+          .mt { margin-top: 15px; }
+        </style>
+      </head>
+      <body>
+        <h2>UNITED COAL DEPOT</h2>
+        <h4>GATE PASS / DELIVERY SLIP</h4>
+        <div class="mt">
+          <p><strong>Date:</strong> ${data.date}</p>
+          <p><strong>Customer / Party:</strong> ${data.customerName || "Walk-in"}</p>
+          <p><strong>Sale Type:</strong> ${data.saleType.toUpperCase()}</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th class="text-right">Qty (Kg)</th>
+              <th class="text-right">Rate</th>
+              <th class="text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.lines.map(l => `
+              <tr>
+                <td>${l.itemName}</td>
+                <td class="text-right">${l.kg}</td>
+                <td class="text-right">₹${l.rate}</td>
+                <td class="text-right">₹${l.amount}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        ${data.deliveryCharge ? `<p class="mt">Delivery Charge: ₹${data.deliveryCharge}</p>` : ''}
+        <h3 class="mt">Grand Total: ₹${data.total}</h3>
+        <script>window.print();</script>
+      </body>
+    </html>
+  `);
+  win.document.close();
 };
 
 export function Today() {
   const { user } = useAuth();
   const [d, setD] = useState<Awaited<ReturnType<typeof dashboard>> | null>(null);
   
-  const [qItem, setQItem] = useState("");
-  const [qKg, setQKg] = useState("");
-  const [qRate, setQRate] = useState("");
-  const [qAccount, setQAccount] = useState("");
-
   const [qlType, setQlType] = useState<"payment_in" | "payment_out" | "expense">("payment_in");
   const [qlParty, setQlParty] = useState("");
   const [qlAccount, setQlAccount] = useState("");
@@ -37,40 +85,11 @@ export function Today() {
   const refresh = () => { if (user) dashboard(user.uid).then(setD); };
   useEffect(() => { refresh(); }, [user]);
 
-  useEffect(() => {
-    if (qItem && d?.items) {
-      const it = d.items.find(i => i.id === qItem);
-      if (it) setQRate(String(it.baseRate));
-    }
-  }, [qItem, d?.items]);
-
   if (!d) return <p className="p-4">Loading workspace…</p>;
 
   const totalReceivables = d.parties.reduce((s, p) => s + (p.currentBalance > 0 ? p.currentBalance : 0), 0);
   const totalPayables = d.parties.reduce((s, p) => s + (p.currentBalance < 0 ? Math.abs(p.currentBalance) : 0), 0);
   const pendingDeliveries = d.bills.filter((b) => b.deliveryStatus === "scheduled");
-
-  const handleQuickSale = async () => {
-    if (!user || !qItem || !qAccount || !n(qKg)) return;
-    const it = d.items.find(i => i.id === qItem)!;
-    const amt = n(qKg) * n(qRate);
-    await saveBill(user.uid, {
-      date: todayISO(),
-      saleType: "walkin",
-      partyId: null,
-      customerName: "Walk-in",
-      phone: "", address: "", deliveryDate: "", deliveryTime: "", deliveryCharge: 0,
-      lines: [{ itemId: it.id, itemName: it.name, kg: n(qKg), rate: n(qRate), amount: amt }],
-      total: amt,
-      accountId: qAccount,
-      paymentMethod: "cash",
-      deliveryStatus: null,
-      isPosted: false,
-      notes: "Quick Sale"
-    });
-    setQKg(""); setQItem(""); setQRate(""); setQAccount("");
-    refresh();
-  };
 
   const handleQuickLedger = async () => {
     if (!user || !qlAccount || !n(qlAmount)) return;
@@ -152,29 +171,7 @@ export function Today() {
         </div>
       </Card>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card className="bg-primary/5 border-primary/20 flex flex-col justify-between">
-          <div>
-            <h2 className="font-display text-lg mb-3">Quick Cash Sale</h2>
-            <div className="grid grid-cols-2 gap-2">
-              <NativeSelect value={qItem} onChange={e => setQItem(e.target.value)}>
-                <option value="">Select Item</option>
-                {d.items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-              </NativeSelect>
-              <NativeSelect value={qAccount} onChange={e => setQAccount(e.target.value)}>
-                <option value="">Received Into</option>
-                {d.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </NativeSelect>
-              <TextInput placeholder="Kg" inputMode="decimal" value={qKg} onChange={e => setQKg(e.target.value)} />
-              <TextInput placeholder="Rate" inputMode="decimal" value={qRate} onChange={e => setQRate(e.target.value)} />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center justify-between border-t border-primary/20 pt-3">
-            <span className="font-semibold text-lg">Total: {formatINR(n(qKg) * n(qRate))}</span>
-            <Button className="h-10" onClick={handleQuickSale}>Sell & Post</Button>
-          </div>
-        </Card>
-
+      <div className="grid md:grid-cols-1 gap-4">
         <Card className="bg-surface border-border flex flex-col justify-between">
           <div>
             <h2 className="font-display text-lg mb-3">Quick Ledger Posting</h2>
@@ -320,133 +317,319 @@ export function BillPage() {
   const [parties, setParties] = useState<Party[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [type, setType] = useState<SaleType>("credit_delivery");
-  const [party, setParty] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [selItem, setSelItem] = useState("");
-  const [kg, setKg] = useState("");
-  const [rate, setRate] = useState("");
-  const [delivery, setDelivery] = useState("");
-  const [account, setAccount] = useState("");
-  const [date, setDate] = useState(todayISO());
-  const [when, setWhen] = useState(todayISO());
-  const [time, setTime] = useState("");
-  const [lines, setLines] = useState<BillLine[]>([]);
+
+  // Card 1 State: Walk-in (Cash Sale)
+  const [wItem, setWItem] = useState("");
+  const [wKg, setWKg] = useState("");
+  const [wRate, setWRate] = useState("");
+  const [wAccount, setWAccount] = useState("");
+  const [wDate, setWDate] = useState(todayISO());
+
+  // Card 2 State: Restaurant Credit Delivery
+  const [cParty, setCParty] = useState("");
+  const [cSelItem, setCSelItem] = useState("");
+  const [cKg, setCKg] = useState("");
+  const [cRate, setCRate] = useState("");
+  const [cLines, setCLines] = useState<BillLine[]>([]);
+  const [cDelivery, setCDelivery] = useState("");
+  const [cWhen, setCWhen] = useState(todayISO());
+  const [cTime, setCTime] = useState("");
+  const [cDate, setCDate] = useState(todayISO());
+
+  // Card 3 State: Scheduled Prepaid Delivery
+  const [pParty, setPParty] = useState("");
+  const [pName, setPName] = useState("");
+  const [pPhone, setPPhone] = useState("");
+  const [pAddress, setPAddress] = useState("");
+  const [pSelItem, setPSelItem] = useState("");
+  const [pKg, setPKg] = useState("");
+  const [pRate, setPRate] = useState("");
+  const [pLines, setPLines] = useState<BillLine[]>([]);
+  const [pDelivery, setPDelivery] = useState("");
+  const [pAccount, setPAccount] = useState("");
+  const [pWhen, setPWhen] = useState(todayISO());
+  const [pTime, setPTime] = useState("");
+  const [pDate, setPDate] = useState(todayISO());
 
   useEffect(() => {
     if (user) {
       listParties(user.uid).then(setParties);
-      listAccounts(user.uid).then((a) => { setAccounts(a); setAccount(a[0]?.id || ""); });
-      listItems(user.uid).then((res) => { setItems(res); if (res.length > 0) setSelItem(res[0].id); });
+      listAccounts(user.uid).then((a) => { 
+        setAccounts(a); 
+        if (a[0]) { setWAccount(a[0].id); setPAccount(a[0].id); }
+      });
+      listItems(user.uid).then((res) => { 
+        setItems(res); 
+        if (res.length > 0) { 
+          setWItem(res[0].id); setWRate(String(res[0].baseRate));
+          setCSelItem(res[0].id); setCRate(String(res[0].baseRate));
+          setPSelItem(res[0].id); setPRate(String(res[0].baseRate));
+        } 
+      });
     }
   }, [user]);
 
+  // Auto rate updates
   useEffect(() => {
-    if (selItem && items.length > 0) {
-      const activeItem = items.find(i => i.id === selItem);
-      const activeParty = parties.find(p => p.id === party);
+    if (wItem && items.length) {
+      const it = items.find(i => i.id === wItem);
+      if (it) setWRate(String(it.baseRate));
+    }
+  }, [wItem, items]);
+
+  useEffect(() => {
+    if (cSelItem && items.length) {
+      const activeItem = items.find(i => i.id === cSelItem);
+      const activeParty = parties.find(p => p.id === cParty);
       let newRate = activeItem?.baseRate || 0;
-      if (activeParty && activeParty.customRates && activeParty.customRates[selItem]) newRate = activeParty.customRates[selItem]; 
-      setRate(newRate ? String(newRate) : "");
+      if (activeParty && activeParty.customRates && activeParty.customRates[cSelItem]) newRate = activeParty.customRates[cSelItem];
+      setCRate(newRate ? String(newRate) : "");
     }
-  }, [selItem, party, items, parties]);
+  }, [cSelItem, cParty, items, parties]);
 
-  const add = () => {
-    if (n(kg) > 0 && n(rate) >= 0 && selItem) {
-      const it = items.find((i) => i.id === selItem)!;
-      setLines([...lines, { itemId: it.id, itemName: it.name, kg: n(kg), rate: n(rate), amount: n(kg) * n(rate) }]);
-      setKg("");
+  useEffect(() => {
+    if (pSelItem && items.length) {
+      const it = items.find(i => i.id === pSelItem);
+      if (it) setPRate(String(it.baseRate));
     }
-  };
+  }, [pSelItem, items]);
 
-  const total = lines.reduce((s, l) => s + l.amount, 0) + n(delivery);
-
-  async function save() {
-    if (!user || !lines.length) return;
-    if (type === "credit_delivery" && !party) return alert("You must select an existing party for credit deliveries.");
-    if (type !== "walkin" && !party && !name) return alert("Choose or enter customer");
+  // Handlers for Save & Print Gate Pass
+  const handleSaveWalkin = async (print: boolean) => {
+    if (!user || !wItem || !wAccount || !n(wKg)) return;
+    const it = items.find(i => i.id === wItem)!;
+    const amt = n(wKg) * n(wRate);
+    const lines = [{ itemId: it.id, itemName: it.name, kg: n(wKg), rate: n(wRate), amount: amt }];
+    const total = amt;
 
     await saveBill(user.uid, {
-      date,
-      saleType: type,
-      partyId: party || null,
-      customerName: party ? (parties.find(p => p.id === party)?.name || "") : name,
-      phone,
-      address,
-      deliveryDate: type === "walkin" ? "" : when,
-      deliveryTime: time,
-      deliveryCharge: n(delivery),
+      date: wDate,
+      saleType: "walkin",
+      partyId: null,
+      customerName: "Walk-in",
+      phone: "", address: "", deliveryDate: "", deliveryTime: "", deliveryCharge: 0,
       lines,
       total,
-      accountId: type === "credit_delivery" ? null : account,
-      paymentMethod: type === "credit_delivery" ? "credit" : "cash",
-      deliveryStatus: type === "walkin" ? null : "scheduled",
+      accountId: wAccount,
+      paymentMethod: "cash",
+      deliveryStatus: null,
       isPosted: false,
-      notes: "",
+      notes: "Quick Walkin Sale"
     });
+
+    if (print) {
+      printGatePass({ date: wDate, customerName: "Walk-in", saleType: "Walk-in Sale", lines, deliveryCharge: 0, total });
+    }
     nav("/");
-  }
+  };
+
+  const handleSaveCredit = async (print: boolean) => {
+    if (!user || !cParty || !cLines.length) return alert("Select party and add items.");
+    const total = cLines.reduce((s, l) => s + l.amount, 0) + n(cDelivery);
+    const customerObj = parties.find(p => p.id === cParty);
+
+    await saveBill(user.uid, {
+      date: cDate,
+      saleType: "credit_delivery",
+      partyId: cParty,
+      customerName: customerObj?.name || "",
+      phone: "", address: "",
+      deliveryDate: cWhen,
+      deliveryTime: cTime,
+      deliveryCharge: n(cDelivery),
+      lines: cLines,
+      total,
+      accountId: null,
+      paymentMethod: "credit",
+      deliveryStatus: "scheduled",
+      isPosted: false,
+      notes: ""
+    });
+
+    if (print) {
+      printGatePass({ date: cDate, customerName: customerObj?.name || "Credit Customer", saleType: "Restaurant Credit Delivery", lines: cLines, deliveryCharge: n(cDelivery), total });
+    }
+    nav("/");
+  };
+
+  const handleSavePrepaid = async (print: boolean) => {
+    if (!user || !pLines.length) return alert("Add items to bill.");
+    if (!pParty && !pName) return alert("Choose or enter customer name.");
+    const total = pLines.reduce((s, l) => s + l.amount, 0) + n(pDelivery);
+    const custName = pParty ? (parties.find(p => p.id === pParty)?.name || "") : pName;
+
+    await saveBill(user.uid, {
+      date: pDate,
+      saleType: "prepaid_delivery",
+      partyId: pParty || null,
+      customerName: custName,
+      phone: pPhone,
+      address: pAddress,
+      deliveryDate: pWhen,
+      deliveryTime: pTime,
+      deliveryCharge: n(pDelivery),
+      lines: pLines,
+      total,
+      accountId: pAccount,
+      paymentMethod: "cash",
+      deliveryStatus: "scheduled",
+      isPosted: false,
+      notes: ""
+    });
+
+    if (print) {
+      printGatePass({ date: pDate, customerName: custName || "Prepaid Customer", saleType: "Prepaid Scheduled Delivery", lines: pLines, deliveryCharge: n(pDelivery), total });
+    }
+    nav("/");
+  };
 
   return (
-    <div className="space-y-4 pb-12">
-      <h1 className="font-display text-3xl">Create bill</h1>
-      <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} min={getYesterdayISO()} max={todayISO()} />
-      <NativeSelect value={type} onChange={(e) => setType(e.target.value as SaleType)}>
-        <option value="credit_delivery">Restaurant · credit delivery</option>
-        <option value="prepaid_delivery">Scheduled delivery · paid in advance</option>
-        <option value="walkin">Walk-in · paid now</option>
-      </NativeSelect>
+    <div className="space-y-6 pb-12">
+      <h1 className="font-display text-3xl">Create Bill / Gate Pass</h1>
 
-      {type !== "walkin" && (
-        <>
-          <Label>Party Selection</Label>
-          <NativeSelect value={party} onChange={(e) => setParty(e.target.value)}>
-            {type !== "credit_delivery" && <option value="">New / one-off customer</option>}
-            {type === "credit_delivery" && !party && <option value="">-- Select a Party --</option>}
-            {parties.filter((p) => p.kind === "customer").map((p) => (
-              <option value={p.id} key={p.id}>{p.name} (Bal: {formatPartyBal(p.currentBalance)})</option>
-            ))}
-          </NativeSelect>
-          {!party && type !== "credit_delivery" && (
-            <>
-              <TextInput placeholder="Customer name" value={name} onChange={(e) => setName(e.target.value)} />
-              <TextInput placeholder="Phone" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              <TextArea placeholder="Delivery address" value={address} onChange={(e) => setAddress(e.target.value)} />
-            </>
-          )}
-          <div className="grid grid-cols-2 gap-3 mt-2">
-            <TextInput type="date" value={when} onChange={(e) => setWhen(e.target.value)} />
-            <TextInput type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+      <div className="grid md:grid-cols-3 gap-6">
+        
+        {/* CARD 1: Walk-In / Cash Sale */}
+        <Card className="bg-primary/5 border-primary/20 flex flex-col justify-between">
+          <div>
+            <h2 className="font-display text-lg mb-2">1. Walk-in · Paid Now</h2>
+            <div className="space-y-2">
+              <TextInput type="date" value={wDate} onChange={e => setWDate(e.target.value)} max={todayISO()} />
+              <NativeSelect value={wItem} onChange={e => setWItem(e.target.value)}>
+                <option value="">Select Item</option>
+                {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </NativeSelect>
+              <NativeSelect value={wAccount} onChange={e => setWAccount(e.target.value)}>
+                <option value="">Received Into</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </NativeSelect>
+              <div className="grid grid-cols-2 gap-2">
+                <TextInput placeholder="Kg" inputMode="decimal" value={wKg} onChange={e => setWKg(e.target.value)} />
+                <TextInput placeholder="Rate" inputMode="decimal" value={wRate} onChange={e => setWRate(e.target.value)} />
+              </div>
+            </div>
           </div>
-        </>
-      )}
+          <div className="mt-4 border-t border-primary/20 pt-3 space-y-3">
+            <span className="font-semibold text-lg block">Total: {formatINR(n(wKg) * n(wRate))}</span>
+            <div className="flex gap-2">
+              <Button className="flex-1 h-10 text-xs" variant="outline" onClick={() => handleSaveWalkin(true)}>Save & Print</Button>
+              <Button className="flex-1 h-10 text-xs" onClick={() => handleSaveWalkin(false)}>Save Only</Button>
+            </div>
+          </div>
+        </Card>
 
-      <Card>
-        <h2 className="font-medium">Items</h2>
-        <div className="mt-2 grid grid-cols-3 gap-2">
-          <NativeSelect value={selItem} onChange={(e) => setSelItem(e.target.value)}>
-            {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </NativeSelect>
-          <TextInput placeholder="Kg" inputMode="decimal" value={kg} onChange={(e) => setKg(e.target.value)} />
-          <TextInput placeholder="Rate" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
-        </div>
-        <Button className="mt-2 h-10 w-full" variant="outline" onClick={add} disabled={!selItem}>Add item</Button>
-        {lines.map((l, i) => (
-          <p className="mt-2 text-sm" key={i}>{l.itemName} · {l.kg} kg × ₹{l.rate} = {formatINR(l.amount)}</p>
-        ))}
-      </Card>
+        {/* CARD 2: Restaurant Credit Delivery */}
+        <Card className="bg-surface border-border flex flex-col justify-between">
+          <div>
+            <h2 className="font-display text-lg mb-2">2. Restaurant · Credit Delivery</h2>
+            <div className="space-y-2">
+              <TextInput type="date" value={cDate} onChange={e => setCDate(e.target.value)} min={getYesterdayISO()} max={todayISO()} />
+              <NativeSelect value={cParty} onChange={e => setCParty(e.target.value)}>
+                <option value="">-- Select Restaurant Party --</option>
+                {parties.filter(p => p.kind === "customer").map(p => (
+                  <option key={p.id} value={p.id}>{p.name} (Bal: {formatPartyBal(p.currentBalance)})</option>
+                ))}
+              </NativeSelect>
+              <div className="grid grid-cols-3 gap-2">
+                <NativeSelect value={cSelItem} onChange={e => setCSelItem(e.target.value)}>
+                  {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </NativeSelect>
+                <TextInput placeholder="Kg" inputMode="decimal" value={cKg} onChange={e => setCKg(e.target.value)} />
+                <TextInput placeholder="Rate" inputMode="decimal" value={cRate} onChange={e => setCRate(e.target.value)} />
+              </div>
+              <Button size="sm" variant="outline" className="w-full" onClick={() => {
+                if (n(cKg) > 0 && cSelItem) {
+                  const it = items.find(i => i.id === cSelItem)!;
+                  setCLines([...cLines, { itemId: it.id, itemName: it.name, kg: n(cKg), rate: n(cRate), amount: n(cKg) * n(cRate) }]);
+                  setCKg("");
+                }
+              }}>Add Item to List</Button>
+              <div className="bg-bg rounded p-2 max-h-24 overflow-y-auto text-xs space-y-1">
+                {cLines.map((l, i) => (
+                  <div key={i} className="flex justify-between">
+                    <span>{l.itemName} ({l.kg}kg)</span>
+                    <span>{formatINR(l.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <TextInput placeholder="Delivery Charge" inputMode="decimal" value={cDelivery} onChange={e => setCDelivery(e.target.value)} />
+              <div className="grid grid-cols-2 gap-2">
+                <TextInput type="date" value={cWhen} onChange={e => setCWhen(e.target.value)} />
+                <TextInput type="time" value={cTime} onChange={e => setCTime(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 border-t pt-3 space-y-3">
+            <span className="font-semibold text-lg block">Total: {formatINR(cLines.reduce((s, l) => s + l.amount, 0) + n(cDelivery))}</span>
+            <div className="flex gap-2">
+              <Button className="flex-1 h-10 text-xs" variant="outline" onClick={() => handleSaveCredit(true)}>Save & Print</Button>
+              <Button className="flex-1 h-10 text-xs" onClick={() => handleSaveCredit(false)}>Save Only</Button>
+            </div>
+          </div>
+        </Card>
 
-      <TextInput placeholder="Delivery charge (optional)" inputMode="decimal" value={delivery} onChange={(e) => setDelivery(e.target.value)} />
-      {type !== "credit_delivery" && (
-        <NativeSelect value={account} onChange={(e) => setAccount(e.target.value)}>
-          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </NativeSelect>
-      )}
+        {/* CARD 3: Scheduled Delivery · Paid in Advance */}
+        <Card className="bg-surface border-border flex flex-col justify-between">
+          <div>
+            <h2 className="font-display text-lg mb-2">3. Scheduled Delivery · Prepaid</h2>
+            <div className="space-y-2">
+              <TextInput type="date" value={pDate} onChange={e => setPDate(e.target.value)} min={getYesterdayISO()} max={todayISO()} />
+              <NativeSelect value={pParty} onChange={e => setPParty(e.target.value)}>
+                <option value="">New / One-off customer</option>
+                {parties.filter(p => p.kind === "customer").map(p => (
+                  <option key={p.id} value={p.id}>{p.name} (Bal: {formatPartyBal(p.currentBalance)})</option>
+                ))}
+              </NativeSelect>
+              {!pParty && (
+                <div className="space-y-2">
+                  <TextInput placeholder="Customer Name" value={pName} onChange={e => setPName(e.target.value)} />
+                  <TextInput placeholder="Phone" inputMode="tel" value={pPhone} onChange={e => setPPhone(e.target.value)} />
+                  <TextArea placeholder="Address" value={pAddress} onChange={e => setPAddress(e.target.value)} />
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2">
+                <NativeSelect value={pSelItem} onChange={e => setPSelItem(e.target.value)}>
+                  {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </NativeSelect>
+                <TextInput placeholder="Kg" inputMode="decimal" value={pKg} onChange={e => setPKg(e.target.value)} />
+                <TextInput placeholder="Rate" inputMode="decimal" value={pRate} onChange={e => setPRate(e.target.value)} />
+              </div>
+              <Button size="sm" variant="outline" className="w-full" onClick={() => {
+                if (n(pKg) > 0 && pSelItem) {
+                  const it = items.find(i => i.id === pSelItem)!;
+                  setPLines([...pLines, { itemId: it.id, itemName: it.name, kg: n(pKg), rate: n(pRate), amount: n(pKg) * n(pRate) }]);
+                  setPKg("");
+                }
+              }}>Add Item to List</Button>
+              <div className="bg-bg rounded p-2 max-h-24 overflow-y-auto text-xs space-y-1">
+                {pLines.map((l, i) => (
+                  <div key={i} className="flex justify-between">
+                    <span>{l.itemName} ({l.kg}kg)</span>
+                    <span>{formatINR(l.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <TextInput placeholder="Delivery Charge" inputMode="decimal" value={pDelivery} onChange={e => setPDelivery(e.target.value)} />
+              <NativeSelect value={pAccount} onChange={e => setPAccount(e.target.value)}>
+                <option value="">Received Into Account</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </NativeSelect>
+              <div className="grid grid-cols-2 gap-2">
+                <TextInput type="date" value={pWhen} onChange={e => setPWhen(e.target.value)} />
+                <TextInput type="time" value={pTime} onChange={e => setPTime(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 border-t pt-3 space-y-3">
+            <span className="font-semibold text-lg block">Total: {formatINR(pLines.reduce((s, l) => s + l.amount, 0) + n(pDelivery))}</span>
+            <div className="flex gap-2">
+              <Button className="flex-1 h-10 text-xs" variant="outline" onClick={() => handleSavePrepaid(true)}>Save & Print</Button>
+              <Button className="flex-1 h-10 text-xs" onClick={() => handleSavePrepaid(false)}>Save Only</Button>
+            </div>
+          </div>
+        </Card>
 
-      <p className="text-lg font-semibold">Total {formatINR(total)}</p>
-      <Button className="w-full h-12 text-base font-medium" onClick={save}>Save delivery slip</Button>
+      </div>
     </div>
   );
 }
@@ -683,7 +866,6 @@ export function Reports() {
     selectedParty = d.parties.find(p => p.id === partyId);
     runningBal = selectedParty?.openingBalance || 0; 
 
-    // Intelligent Brought-Forward Logic
     d.bills.filter(b => b.partyId === partyId && b.isPosted && b.date < fromDate).forEach(b => runningBal += b.total);
     d.purchases.filter(p => p.partyId === partyId && p.date < fromDate).forEach(p => runningBal -= p.total);
     d.money.filter(m => m.partyId === partyId && m.date < fromDate).forEach(m => {

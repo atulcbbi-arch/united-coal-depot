@@ -2,8 +2,6 @@ import { supabase } from "../supabase";
 import { sendTelegramNotification } from "../telegram";
 import { type Account, type Bill, type Item, type MoneyEntry, type Party, type Purchase, type OverdueParty, type StockInsight, type InactiveParty } from "./types";
 
-// uid argument is kept so your React components don't break, but it is ignored since we use direct database access now.
-
 export async function getSecurityPin(uid: string): Promise<string | null> {
   const { data } = await supabase.from("settings").select("pin").eq("id", "security").single();
   return data ? data.pin : null;
@@ -84,6 +82,7 @@ export async function deleteItem(uid: string, id: string) {
 export async function saveBill(uid: string, bill: Omit<Bill, "id"> & { id?: string }, id?: string) {
   const billId = id || bill.id;
   let shouldPost = false;
+  
   if (!bill.isPosted && (bill.deliveryStatus === "delivered" || bill.deliveryStatus === null)) {
     shouldPost = true;
   }
@@ -120,20 +119,16 @@ export async function saveBill(uid: string, bill: Omit<Bill, "id"> & { id?: stri
     savedId = data.id;
   }
 
-  // TELEGRAM LOGIC: Ignore Cash (walkin) completely. Only alert on Credit or Prepaid.
-  if (bill.saleType !== "walkin") {
-    const typeStr = bill.saleType === "credit_delivery" ? "Credit Sale" : "Prepaid Order";
+  // TELEGRAM LOGIC (Option 2): Trigger alert only when a credit delivery order is marked as delivered
+  if (shouldPost && bill.saleType === "credit_delivery") {
     const itemsStr = bill.lines.map((l: any) => `${l.itemName} (${l.kg}kg)`).join(", ");
-    
-    // Fetch up-to-date balance for credit customers
     let balStr = "";
-    if (bill.partyId && bill.saleType === "credit_delivery") {
+    if (bill.partyId) {
       const { data: updatedParty } = await supabase.from("parties").select("currentBalance").eq("id", bill.partyId).single();
       const bal = updatedParty?.currentBalance || 0;
       balStr = `\n⚖️ New Balance: ${bal > 0 ? bal + " Dr" : Math.abs(bal) + " Cr"}`;
     }
-
-    const msg = `📝 *${typeStr}*\n👤 Customer: ${bill.customerName}\n📦 Items: ${itemsStr}\n💰 Bill Amount: ₹${bill.total}${balStr}`;
+    const msg = `📝 *Credit Sale Delivered & Posted*\n👤 Customer: ${bill.customerName}\n📦 Items: ${itemsStr}\n💰 Bill Amount: ₹${bill.total}${balStr}`;
     await sendTelegramNotification(msg);
   }
 
@@ -239,8 +234,6 @@ export async function saveMoney(uid: string, entry: Omit<MoneyEntry, "id">, id?:
   if (entry.partyId && (entry.type === "payment_in" || entry.type === "payment_out")) {
     const actionStr = entry.type === "payment_in" ? "Received from" : "Paid to";
     const icon = entry.type === "payment_in" ? "🟢" : "🔴";
-    
-    // Fetch live updated balance directly from database
     const { data: updatedParty } = await supabase.from("parties").select("currentBalance").eq("id", entry.partyId).single();
     const bal = updatedParty?.currentBalance || 0;
     const balStr = bal > 0 ? `${bal} Dr` : `${Math.abs(bal)} Cr`;
