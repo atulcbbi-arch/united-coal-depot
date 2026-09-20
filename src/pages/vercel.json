@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/report?time=morning",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/report?time=evening",
+      "schedule": "30 15 * * *"
+    }
+  ]
+}
