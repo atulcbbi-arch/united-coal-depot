@@ -219,8 +219,8 @@ export function Today() {
                 <div className="space-y-2">
                   <p className="font-medium text-sm border-b pb-2 mb-2">Editing {b.customerName}'s Order</p>
                   {editLines.map((l, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <span className="text-sm w-20 truncate">{l.itemName}</span>
+                    <div key={idx} className="grid grid-cols-3 gap-2 items-center">
+                      <span className="text-sm truncate font-medium">{l.itemName}</span>
                       <TextInput placeholder="Kg" inputMode="decimal" value={l.kg} onChange={e => {
                         const nl = [...editLines]; nl[idx].kg = n(e.target.value); nl[idx].amount = nl[idx].kg * nl[idx].rate; setEditLines(nl);
                       }} />
@@ -487,144 +487,235 @@ export function BillPage() {
     <div className="space-y-6 pb-12">
       <h1 className="font-display text-3xl">Create Bill / Gate Pass</h1>
 
-      <div className="grid md:grid-cols-3 gap-6">
+      {/* Grid changed to lg:grid-cols-3 to prevent desktop squishing */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* CARD 1: Walk-In / Cash Sale */}
-        <Card className="bg-primary/5 border-primary/20 flex flex-col justify-between">
+        <Card className="bg-primary/5 border-primary/20 flex flex-col justify-between h-full">
           <div>
-            <h2 className="font-display text-lg mb-2">1. Walk-in · Paid Now</h2>
-            <div className="space-y-2">
-              <TextInput type="date" value={wDate} onChange={e => setWDate(e.target.value)} max={todayISO()} />
-              <NativeSelect value={wItem} onChange={e => setWItem(e.target.value)}>
-                <option value="">Select Item</option>
-                {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-              </NativeSelect>
-              <NativeSelect value={wAccount} onChange={e => setWAccount(e.target.value)}>
-                <option value="">Received Into</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </NativeSelect>
+            <h2 className="font-display text-lg mb-4 border-b border-primary/20 pb-2">1. Walk-in · Paid Now</h2>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
-                <TextInput placeholder="Kg" inputMode="decimal" value={wKg} onChange={e => setWKg(e.target.value)} />
-                <TextInput placeholder="Rate" inputMode="decimal" value={wRate} onChange={e => setWRate(e.target.value)} />
+                <div>
+                  <Label className="text-xs mb-1 block">Date</Label>
+                  <TextInput type="date" value={wDate} onChange={e => setWDate(e.target.value)} max={todayISO()} />
+                </div>
+                <div>
+                  <Label className="text-xs mb-1 block">Received Into</Label>
+                  <NativeSelect value={wAccount} onChange={e => setWAccount(e.target.value)}>
+                    <option value="">Select Account</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </NativeSelect>
+                </div>
+              </div>
+
+              <div className="bg-white/50 dark:bg-black/10 p-3 rounded border border-primary/10">
+                <Label className="text-xs mb-2 block font-semibold text-primary">Item Details</Label>
+                <NativeSelect className="mb-3" value={wItem} onChange={e => setWItem(e.target.value)}>
+                  <option value="">Select Item</option>
+                  {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </NativeSelect>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-[10px] uppercase text-muted mb-1 block">Quantity</Label>
+                    <TextInput placeholder="Kg" inputMode="decimal" value={wKg} onChange={e => setWKg(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] uppercase text-muted mb-1 block">Rate</Label>
+                    <TextInput placeholder="₹ Rate" inputMode="decimal" value={wRate} onChange={e => setWRate(e.target.value)} />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <div className="mt-4 border-t border-primary/20 pt-3 space-y-3">
-            <span className="font-semibold text-lg block">Total: {formatINR(n(wKg) * n(wRate))}</span>
-            <div className="flex gap-2">
-              <Button className="flex-1 h-10 text-xs" variant="outline" onClick={() => handleSaveWalkin(true)}>Save & Print</Button>
-              <Button className="flex-1 h-10 text-xs" onClick={() => handleSaveWalkin(false)}>Save Only</Button>
+          <div className="mt-6 border-t border-primary/20 pt-4 space-y-4">
+            <span className="font-semibold text-xl block text-primary">Total: {formatINR(n(wKg) * n(wRate))}</span>
+            <div className="grid grid-cols-2 gap-2">
+              <Button className="w-full text-xs" variant="outline" onClick={() => handleSaveWalkin(true)}>🖨️ Print Pass</Button>
+              <Button className="w-full text-xs" onClick={() => handleSaveWalkin(false)}>💾 Save Only</Button>
             </div>
           </div>
         </Card>
 
         {/* CARD 2: Restaurant Credit Delivery */}
-        <Card className="bg-surface border-border flex flex-col justify-between">
+        <Card className="bg-surface border-border flex flex-col justify-between h-full">
           <div>
-            <h2 className="font-display text-lg mb-2">2. Restaurant · Credit Delivery</h2>
-            <div className="space-y-2">
-              <TextInput type="date" value={cDate} onChange={e => setCDate(e.target.value)} min={getYesterdayISO()} max={todayISO()} />
-              <NativeSelect value={cParty} onChange={e => setCParty(e.target.value)}>
-                <option value="">-- Select Restaurant Party --</option>
-                {parties.filter(p => p.kind === "customer").map(p => (
-                  <option key={p.id} value={p.id}>{p.name} (Bal: {formatPartyBal(p.currentBalance)})</option>
-                ))}
-              </NativeSelect>
-              <div className="grid grid-cols-3 gap-2">
-                <NativeSelect value={cSelItem} onChange={e => setCSelItem(e.target.value)}>
-                  {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                </NativeSelect>
-                <TextInput placeholder="Kg" inputMode="decimal" value={cKg} onChange={e => setCKg(e.target.value)} />
-                <TextInput placeholder="Rate" inputMode="decimal" value={cRate} onChange={e => setCRate(e.target.value)} />
-              </div>
-              <Button size="sm" variant="outline" className="w-full" onClick={() => {
-                if (n(cKg) > 0 && cSelItem) {
-                  const it = items.find(i => i.id === cSelItem)!;
-                  setCLines([...cLines, { itemId: it.id, itemName: it.name, kg: n(cKg), rate: n(cRate), amount: n(cKg) * n(cRate) }]);
-                  setCKg("");
-                }
-              }}>Add Item to List</Button>
-              <div className="bg-bg rounded p-2 max-h-24 overflow-y-auto text-xs space-y-1">
-                {cLines.map((l, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span>{l.itemName} ({l.kg}kg)</span>
-                    <span>{formatINR(l.amount)}</span>
-                  </div>
-                ))}
-              </div>
-              <TextInput placeholder="Delivery Charge" inputMode="decimal" value={cDelivery} onChange={e => setCDelivery(e.target.value)} />
+            <h2 className="font-display text-lg mb-4 border-b pb-2">2. Restaurant · Credit</h2>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
-                <TextInput type="date" value={cWhen} onChange={e => setCWhen(e.target.value)} />
-                <TextInput type="time" value={cTime} onChange={e => setCTime(e.target.value)} />
+                 <div>
+                    <Label className="text-xs mb-1 block">Date</Label>
+                    <TextInput type="date" value={cDate} onChange={e => setCDate(e.target.value)} min={getYesterdayISO()} max={todayISO()} />
+                 </div>
+                 <div>
+                    <Label className="text-xs mb-1 block">Party</Label>
+                    <NativeSelect value={cParty} onChange={e => setCParty(e.target.value)}>
+                      <option value="">Select Party</option>
+                      {parties.filter(p => p.kind === "customer").map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </NativeSelect>
+                 </div>
+              </div>
+
+              <div className="bg-black/5 dark:bg-white/5 p-3 rounded border border-border">
+                  <Label className="text-xs mb-2 block font-semibold">Add Items</Label>
+                  <NativeSelect className="mb-3" value={cSelItem} onChange={e => setCSelItem(e.target.value)}>
+                    {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  </NativeSelect>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <Label className="text-[10px] uppercase text-muted mb-1 block">Quantity</Label>
+                      <TextInput placeholder="Kg" inputMode="decimal" value={cKg} onChange={e => setCKg(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] uppercase text-muted mb-1 block">Rate</Label>
+                      <TextInput placeholder="₹ Rate" inputMode="decimal" value={cRate} onChange={e => setCRate(e.target.value)} />
+                    </div>
+                  </div>
+                  <Button size="sm" variant="secondary" className="w-full" onClick={() => {
+                    if (n(cKg) > 0 && cSelItem) {
+                      const it = items.find(i => i.id === cSelItem)!;
+                      setCLines([...cLines, { itemId: it.id, itemName: it.name, kg: n(cKg), rate: n(cRate), amount: n(cKg) * n(cRate) }]);
+                      setCKg("");
+                    }
+                  }}>+ Add to List</Button>
+              </div>
+              
+              {cLines.length > 0 && (
+                  <div className="bg-bg rounded p-2 max-h-24 overflow-y-auto text-xs space-y-1 border">
+                    {cLines.map((l, i) => (
+                      <div key={i} className="flex justify-between">
+                        <span>{l.itemName} ({l.kg}kg)</span>
+                        <span className="font-medium">{formatINR(l.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                 <div>
+                    <Label className="text-xs mb-1 block">Del. Charge ₹</Label>
+                    <TextInput placeholder="Charge" inputMode="decimal" value={cDelivery} onChange={e => setCDelivery(e.target.value)} />
+                 </div>
+                 <div>
+                    <Label className="text-xs mb-1 block">Del. Date</Label>
+                    <TextInput type="date" value={cWhen} onChange={e => setCWhen(e.target.value)} />
+                 </div>
+              </div>
+              <div>
+                 <Label className="text-xs mb-1 block">Del. Time</Label>
+                 <TextInput type="time" value={cTime} onChange={e => setCTime(e.target.value)} />
               </div>
             </div>
           </div>
-          <div className="mt-4 border-t pt-3 space-y-3">
-            <span className="font-semibold text-lg block">Total: {formatINR(cLines.reduce((s, l) => s + l.amount, 0) + n(cDelivery))}</span>
-            <div className="flex gap-2">
-              <Button className="flex-1 h-10 text-xs" variant="outline" onClick={() => handleSaveCredit(true)}>Save & Print</Button>
-              <Button className="flex-1 h-10 text-xs" onClick={() => handleSaveCredit(false)}>Save Only</Button>
+          <div className="mt-6 border-t pt-4 space-y-4">
+            <span className="font-semibold text-xl block">Total: {formatINR(cLines.reduce((s, l) => s + l.amount, 0) + n(cDelivery))}</span>
+            <div className="grid grid-cols-2 gap-2">
+              <Button className="w-full text-xs" variant="outline" onClick={() => handleSaveCredit(true)}>🖨️ Print Pass</Button>
+              <Button className="w-full text-xs" onClick={() => handleSaveCredit(false)}>💾 Save Only</Button>
             </div>
           </div>
         </Card>
 
         {/* CARD 3: Scheduled Delivery · Paid in Advance */}
-        <Card className="bg-surface border-border flex flex-col justify-between">
+        <Card className="bg-surface border-border flex flex-col justify-between h-full">
           <div>
-            <h2 className="font-display text-lg mb-2">3. Scheduled Delivery · Prepaid</h2>
-            <div className="space-y-2">
-              <TextInput type="date" value={pDate} onChange={e => setPDate(e.target.value)} min={getYesterdayISO()} max={todayISO()} />
-              <NativeSelect value={pParty} onChange={e => setPParty(e.target.value)}>
-                <option value="">New / One-off customer</option>
-                {parties.filter(p => p.kind === "customer").map(p => (
-                  <option key={p.id} value={p.id}>{p.name} (Bal: {formatPartyBal(p.currentBalance)})</option>
-                ))}
-              </NativeSelect>
+            <h2 className="font-display text-lg mb-4 border-b pb-2">3. Scheduled · Prepaid</h2>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                 <div>
+                    <Label className="text-xs mb-1 block">Date</Label>
+                    <TextInput type="date" value={pDate} onChange={e => setPDate(e.target.value)} min={getYesterdayISO()} max={todayISO()} />
+                 </div>
+                 <div>
+                    <Label className="text-xs mb-1 block">Customer</Label>
+                    <NativeSelect value={pParty} onChange={e => setPParty(e.target.value)}>
+                      <option value="">One-off / New</option>
+                      {parties.filter(p => p.kind === "customer").map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </NativeSelect>
+                 </div>
+              </div>
+              
               {!pParty && (
-                <div className="space-y-2">
-                  <TextInput placeholder="Customer Name" value={pName} onChange={e => setPName(e.target.value)} />
-                  <TextInput placeholder="Phone" inputMode="tel" value={pPhone} onChange={e => setPPhone(e.target.value)} />
-                  <TextArea placeholder="Address" value={pAddress} onChange={e => setPAddress(e.target.value)} />
+                <div className="grid grid-cols-2 gap-2">
+                    <TextInput placeholder="Name" value={pName} onChange={e => setPName(e.target.value)} />
+                    <TextInput placeholder="Phone" inputMode="tel" value={pPhone} onChange={e => setPPhone(e.target.value)} />
+                    <div className="col-span-2">
+                      <TextArea placeholder="Full Delivery Address" value={pAddress} onChange={e => setPAddress(e.target.value)} />
+                    </div>
                 </div>
               )}
-              <div className="grid grid-cols-3 gap-2">
-                <NativeSelect value={pSelItem} onChange={e => setPSelItem(e.target.value)}>
-                  {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                </NativeSelect>
-                <TextInput placeholder="Kg" inputMode="decimal" value={pKg} onChange={e => setPKg(e.target.value)} />
-                <TextInput placeholder="Rate" inputMode="decimal" value={pRate} onChange={e => setPRate(e.target.value)} />
-              </div>
-              <Button size="sm" variant="outline" className="w-full" onClick={() => {
-                if (n(pKg) > 0 && pSelItem) {
-                  const it = items.find(i => i.id === pSelItem)!;
-                  setPLines([...pLines, { itemId: it.id, itemName: it.name, kg: n(pKg), rate: n(pRate), amount: n(pKg) * n(pRate) }]);
-                  setPKg("");
-                }
-              }}>Add Item to List</Button>
-              <div className="bg-bg rounded p-2 max-h-24 overflow-y-auto text-xs space-y-1">
-                {pLines.map((l, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span>{l.itemName} ({l.kg}kg)</span>
-                    <span>{formatINR(l.amount)}</span>
+
+              <div className="bg-black/5 dark:bg-white/5 p-3 rounded border border-border">
+                  <Label className="text-xs mb-2 block font-semibold">Add Items</Label>
+                  <NativeSelect className="mb-3" value={pSelItem} onChange={e => setPSelItem(e.target.value)}>
+                    {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  </NativeSelect>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <Label className="text-[10px] uppercase text-muted mb-1 block">Quantity</Label>
+                      <TextInput placeholder="Kg" inputMode="decimal" value={pKg} onChange={e => setPKg(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] uppercase text-muted mb-1 block">Rate</Label>
+                      <TextInput placeholder="₹ Rate" inputMode="decimal" value={pRate} onChange={e => setPRate(e.target.value)} />
+                    </div>
                   </div>
-                ))}
+                  <Button size="sm" variant="secondary" className="w-full" onClick={() => {
+                    if (n(pKg) > 0 && pSelItem) {
+                      const it = items.find(i => i.id === pSelItem)!;
+                      setPLines([...pLines, { itemId: it.id, itemName: it.name, kg: n(pKg), rate: n(pRate), amount: n(pKg) * n(pRate) }]);
+                      setPKg("");
+                    }
+                  }}>+ Add to List</Button>
               </div>
-              <TextInput placeholder="Delivery Charge" inputMode="decimal" value={pDelivery} onChange={e => setPDelivery(e.target.value)} />
-              <NativeSelect value={pAccount} onChange={e => setPAccount(e.target.value)}>
-                <option value="">Received Into Account</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </NativeSelect>
+
+              {pLines.length > 0 && (
+                  <div className="bg-bg rounded p-2 max-h-24 overflow-y-auto text-xs space-y-1 border">
+                    {pLines.map((l, i) => (
+                      <div key={i} className="flex justify-between">
+                        <span>{l.itemName} ({l.kg}kg)</span>
+                        <span className="font-medium">{formatINR(l.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
-                <TextInput type="date" value={pWhen} onChange={e => setPWhen(e.target.value)} />
-                <TextInput type="time" value={pTime} onChange={e => setPTime(e.target.value)} />
+                 <div>
+                   <Label className="text-xs mb-1 block">Received Into</Label>
+                   <NativeSelect value={pAccount} onChange={e => setPAccount(e.target.value)}>
+                      <option value="">Account</option>
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                   </NativeSelect>
+                 </div>
+                 <div>
+                   <Label className="text-xs mb-1 block">Del. Charge ₹</Label>
+                   <TextInput placeholder="Charge" inputMode="decimal" value={pDelivery} onChange={e => setPDelivery(e.target.value)} />
+                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                 <div>
+                    <Label className="text-xs mb-1 block">Del. Date</Label>
+                    <TextInput type="date" value={pWhen} onChange={e => setPWhen(e.target.value)} />
+                 </div>
+                 <div>
+                    <Label className="text-xs mb-1 block">Del. Time</Label>
+                    <TextInput type="time" value={pTime} onChange={e => setPTime(e.target.value)} />
+                 </div>
+              </div>
+
             </div>
           </div>
-          <div className="mt-4 border-t pt-3 space-y-3">
-            <span className="font-semibold text-lg block">Total: {formatINR(pLines.reduce((s, l) => s + l.amount, 0) + n(pDelivery))}</span>
-            <div className="flex gap-2">
-              <Button className="flex-1 h-10 text-xs" variant="outline" onClick={() => handleSavePrepaid(true)}>Save & Print</Button>
-              <Button className="flex-1 h-10 text-xs" onClick={() => handleSavePrepaid(false)}>Save Only</Button>
+          <div className="mt-6 border-t pt-4 space-y-4">
+            <span className="font-semibold text-xl block">Total: {formatINR(pLines.reduce((s, l) => s + l.amount, 0) + n(pDelivery))}</span>
+            <div className="grid grid-cols-2 gap-2">
+              <Button className="w-full text-xs" variant="outline" onClick={() => handleSavePrepaid(true)}>🖨️ Print Pass</Button>
+              <Button className="w-full text-xs" onClick={() => handleSavePrepaid(false)}>💾 Save Only</Button>
             </div>
           </div>
         </Card>
