@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
+  },
+  "include": ["src/main.tsx", "src/App.tsx", "src/styles.css", "src/vite-env.d.ts", "src/lib/auth.tsx", "src/lib/firebase.ts", "src/lib/store.ts", "src/lib/types.ts", "src/lib/utils.ts", "src/components/shell.tsx", "src/components/ui.tsx", "src/pages/login.tsx", "src/pages/owner.tsx"]
+}
