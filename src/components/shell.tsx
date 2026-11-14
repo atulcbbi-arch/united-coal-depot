@@ -17,7 +17,7 @@ const desktopNav = [
   { to: "/", label: "Today", icon: Home },
   { to: "/bill", label: "Create Bill", icon: FilePlus },
   { to: "/purchase", label: "Add Stock", icon: Package },
-  { to: "/money", label: "Ledger Entry", icon: Wallet },
+  { to: "/money", label: "Payment / Expense", icon: Wallet },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;

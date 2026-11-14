@@ -1,4 +1,15 @@
-# United Coal Depot — v4
+# United Coal Depot — v5
+
+## v5 changes (entry screens)
+- Create Bill is one form: Cash / Credit / Advance paid. Only the needed fields show. Several items on every bill,
+  remove a line with ✕, customer search with balance, add a new customer from the bill, rate fills from the party's last rate.
+- Credit bill "Given now" posts to the ledger immediately; "Deliver later" and "Advance paid" post when marked delivered.
+- Any past date is allowed on bills.
+- Add Stock: credit/cash buttons, supplier search, several items in one purchase.
+- Payment / Expense: Received / Paid / Expense / Cheque buttons, labels on every field, balance-after preview.
+- Total and Save stay fixed at the bottom; after saving the form clears and stays on the same page. Save buttons cannot double-post.
+
+# (v4)
 
 ## v4 changes (app screens)
 - Party ledger rebuilt: Date | Particulars | Dr | Cr | Balance, fits a phone, opening + totals + closing rows,
