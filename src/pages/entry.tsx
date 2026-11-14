@@ -45,7 +45,7 @@ function writeGatePass(win: Window | null, d: PassData) {
 }
 
 // ---------- small building blocks ----------
-function Field({ label, hint, children, className }: { label: string; hint?: ReactNode; children: ReactNode; className?: string }) {
+export function Field({ label, hint, children, className }: { label: string; hint?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <div className={className}>
       <div className="mb-1 flex items-baseline justify-between gap-2">
@@ -57,7 +57,7 @@ function Field({ label, hint, children, className }: { label: string; hint?: Rea
   );
 }
 
-function Segmented<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; sub?: string }[] }) {
+export function Segmented<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; sub?: string }[] }) {
   return (
     <div className="grid gap-1 rounded-[var(--radius-md)] border border-border bg-surface p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map((o) => (

@@ -6,6 +6,7 @@ import {
   Package,
   Wallet,
   MoreHorizontal,
+  Users,
   LogOut
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -19,11 +20,12 @@ const desktopNav = [
   { to: "/purchase", label: "Add Stock", icon: Package },
   { to: "/money", label: "Payment / Expense", icon: Wallet },
   { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/masters", label: "Masters", icon: Users },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 // Pages that live behind the mobile "More" button.
-const morePaths = ["/settings", "/purchase"];
+const morePaths = ["/settings", "/purchase", "/masters"];
 
 export function AppShell() {
   const { user } = useAuth();
@@ -90,6 +92,7 @@ export function AppShell() {
               {(
                 [
                   { to: "/purchase", label: "Add Stock (Purchase)", icon: Package },
+                  { to: "/masters", label: "Masters", icon: Users },
                   { to: "/settings", label: "Settings", icon: Settings },
                 ] as const
               ).map((item) => {

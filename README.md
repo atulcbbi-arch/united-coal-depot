@@ -1,4 +1,12 @@
-# United Coal Depot — v6
+# United Coal Depot — v7
+
+## v7 changes
+- New Masters page (menu: Masters; on phone under More): Parties, Items, Accounts tabs.
+  Search parties, tap a row to edit, phone/address/credit days, opening balance with Dr/Cr, Open ledger button,
+  items show current stock, accounts show balance. Duplicate names are blocked; anything with entries cannot be deleted.
+- Settings now holds only the security PIN and factory reset.
+
+# (v6)
 
 ## v6 changes (reports)
 - Morning report now starts with "Deliveries Scheduled Today" (plus any still pending from earlier days)

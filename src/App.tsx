@@ -3,7 +3,7 @@ import { Toaster } from "sonner";
 import { AppShell } from "@/components/shell";
 import { AuthProvider, RequireAuth, useAuth, signOutUser } from "@/lib/auth";
 import { LoginPage } from "@/pages/login";
-import { BillPage, Reports, Settings, Today, PurchasePage, MoneyPage } from "@/pages/owner";
+import { BillPage, Reports, Settings, Today, PurchasePage, MoneyPage, Masters } from "@/pages/owner";
 import { getSecurityPin, saveSecurityPin } from "@/lib/store";
 import { Button, TextInput } from "@/components/ui";
 import { useState, useEffect } from "react";
@@ -111,6 +111,7 @@ export function App() {
             <Route path="/purchase" element={<PurchasePage />} />
             <Route path="/money" element={<MoneyPage />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/masters" element={<Masters />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

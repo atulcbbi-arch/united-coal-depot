@@ -282,7 +282,7 @@ export function Reports() {
   const [ledgerRange, setLedgerRange] = useState<Range>(() => rangeFor("all"));
   const [regRange, setRegRange] = useState<Range>(() => rangeFor("month"));
 
-  const [partyId, setPartyId] = useState("");
+  const [partyId, setPartyId] = useState(() => new URLSearchParams(window.location.search).get("party") || "");
   const [pickerOpen, setPickerOpen] = useState(true);
   const [search, setSearch] = useState("");
 

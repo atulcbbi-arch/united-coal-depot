@@ -258,42 +258,12 @@ function Stat({ a, b }: { a: string; b: string }) {
 
 export { BillPage, PurchasePage, MoneyPage } from "./entry";
 export { Reports } from "./reports";
+export { Masters } from "./masters";
 
 export function Settings() {
   const { user } = useAuth();
   const [typed, setTyped] = useState("");
-  
-  const [items, setItems] = useState<Item[]>([]);
-  const [editItemId, setEditItemId] = useState("");
-  const [itemName, setItemName] = useState("");
-  const [itemRate, setItemRate] = useState("");
-  const [itemOpeningStock, setItemOpeningStock] = useState("");
-  
-  const [parties, setParties] = useState<Party[]>([]);
-  const [editPartyId, setEditPartyId] = useState("");
-  const [partyName, setPartyName] = useState("");
-  const [partyKind, setPartyKind] = useState<"customer"|"supplier">("customer");
-  const [partyCreditDays, setPartyCreditDays] = useState("7");
-  const [partyOpeningBal, setPartyOpeningBal] = useState("");
-  const [partySide, setPartySide] = useState<"" | "dr" | "cr">("");
-
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [editAccId, setEditAccId] = useState("");
-  const [accName, setAccName] = useState("");
-  const [accType, setAccType] = useState<"cash"|"bank">("bank");
-  const [accOpening, setAccOpening] = useState("");
-
   const [newPin, setNewPin] = useState("");
-
-  const refresh = () => {
-    if (user) {
-      listItems(user.uid).then(setItems);
-      listParties(user.uid).then(setParties);
-      listAccounts(user.uid).then(setAccounts);
-    }
-  };
-
-  useEffect(() => { refresh(); }, [user]);
 
   const handleUpdatePin = async () => {
     if (!user || newPin.length < 4) return alert("PIN must be at least 4 digits");
@@ -302,150 +272,24 @@ export function Settings() {
     alert("Security M-PIN updated successfully.");
   };
 
-  const handleSaveAccount = async () => {
-    if (!user || !accName) return;
-    await saveAccount(user.uid, { name: accName, type: accType, openingBalance: n(accOpening) }, editAccId || undefined);
-    setEditAccId(""); setAccName(""); setAccOpening("");
-    refresh();
-  };
-
-  const handleDeleteAccount = async (id: string) => {
-    if (!user || !confirm("Delete this account?")) return;
-    await deleteAccount(user.uid, id);
-    refresh();
-  }
-
-  const handleSaveItem = async () => {
-    if (!user || !itemName || n(itemRate) < 0) return;
-    await saveItem(user.uid, { name: itemName, baseRate: n(itemRate), openingStock: n(itemOpeningStock) }, editItemId || undefined);
-    setEditItemId(""); setItemName(""); setItemRate(""); setItemOpeningStock("");
-    refresh();
-  };
-
-  const handleDeleteItem = async (id: string) => {
-    if (!user || !confirm("Delete this item?")) return;
-    await deleteItem(user.uid, id);
-    refresh();
-  }
-
-  const handleSaveParty = async () => {
-    if (!user || !partyName) return;
-    let ob = Math.abs(n(partyOpeningBal));
-    // FIX: explicit Dr/Cr; default = Dr for customer, Cr for supplier (edits keep the saved side)
-    const side = partySide || (partyKind === "supplier" ? "cr" : "dr");
-    if (side === "cr") ob = -ob;
-
-    await saveParty(user.uid, { 
-      name: partyName, 
-      kind: partyKind, 
-      creditDays: n(partyCreditDays) || 7, 
-      openingBalance: ob,
-      // only blank these for a NEW party; an edit must not wipe a saved phone/address
-      ...(editPartyId ? {} : { phone: "", address: "" })
-    }, editPartyId || undefined);
-    setEditPartyId(""); setPartyName(""); setPartyOpeningBal(""); setPartySide(""); setPartyCreditDays("7");
-    refresh();
-  };
-
-  const handleDeleteParty = async (id: string) => {
-    if (!user || !confirm("Delete this party?")) return;
-    await deleteParty(user.uid, id);
-    refresh();
-  }
-
   return (
     <div className="space-y-4 pb-12">
       <h1 className="font-display text-3xl">Settings</h1>
-      
+
+      <Card className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-medium">Parties, items and accounts</h2>
+          <p className="text-sm text-muted mt-1">These have moved to the Masters page.</p>
+        </div>
+        <Link to="/masters" className="inline-flex h-11 items-center rounded-[var(--radius-sm)] bg-primary px-4 font-medium text-primary-fg">Open Masters</Link>
+      </Card>
+
       <Card>
         <h2 className="font-medium">Security Details</h2>
         <p className="text-sm text-muted mt-1">Change your 4-digit M-PIN. This locks the app when you close the tab.</p>
         <div className="flex gap-2 mt-3">
            <TextInput type="password" inputMode="numeric" pattern="[0-9]*" placeholder="New M-PIN" value={newPin} onChange={e => setNewPin(e.target.value)} />
-           <Button onClick={handleUpdatePin}>Update PIN</Button>
-        </div>
-      </Card>
-
-      <Card>
-        <h2 className="font-medium">Manage Accounts</h2>
-        <div className="mt-3 space-y-2">
-          {accounts.map(a => (
-            <div key={a.id} className="flex flex-wrap justify-between items-center gap-x-3 gap-y-0.5 border-b pb-1.5 text-sm">
-              <span>{a.name} ({a.type})</span>
-              <div className="flex items-center gap-3">
-                <span className="text-muted">Balance: {formatINR(a.balance || 0)}</span>
-                <button onClick={() => { setEditAccId(a.id); setAccName(a.name); setAccType(a.type); setAccOpening(String(a.openingBalance)); window.scrollTo(0, document.body.scrollHeight); }} className="text-primary text-xs hover:underline">Edit</button>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2">
-          <TextInput placeholder="Account name" value={accName} onChange={e => setAccName(e.target.value)} />
-          <NativeSelect value={accType} onChange={e => setAccType(e.target.value as "cash"|"bank")}>
-            <option value="bank">Bank Account</option>
-            <option value="cash">Cash Till</option>
-          </NativeSelect>
-          <TextInput placeholder="Opening Balance" inputMode="decimal" value={accOpening} onChange={e => setAccOpening(e.target.value)} />
-        </div>
-        <div className="flex gap-2 mt-2">
-          <Button variant="outline" onClick={handleSaveAccount}>{editAccId ? "Update Account" : "Add Account"}</Button>
-          {editAccId && <Button variant="outline" onClick={() => { setEditAccId(""); setAccName(""); setAccOpening(""); }}>Cancel Edit</Button>}
-        </div>
-      </Card>
-
-      <Card>
-        <h2 className="font-medium">Manage Parties</h2>
-        <div className="mt-3 space-y-2">
-          {parties.map(p => (
-            <div key={p.id} className="flex flex-wrap justify-between items-center gap-x-3 gap-y-0.5 border-b pb-1.5 text-sm">
-              <span>{p.name} ({p.kind})</span>
-              <div className="flex items-center gap-3">
-                <span className="text-muted">Balance: {formatPartyBal(p.currentBalance)}</span>
-                <button onClick={() => { setEditPartyId(p.id); setPartyName(p.name); setPartyKind(p.kind); setPartyOpeningBal(String(Math.abs(p.openingBalance))); setPartySide(p.openingBalance < 0 ? "cr" : p.openingBalance > 0 ? "dr" : ""); setPartyCreditDays(String(p.creditDays)); window.scrollTo(0, document.body.scrollHeight); }} className="text-primary text-xs hover:underline">Edit</button>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
-          <TextInput placeholder="Party name" value={partyName} onChange={e => setPartyName(e.target.value)} />
-          <NativeSelect value={partyKind} onChange={e => setPartyKind(e.target.value as any)}>
-            <option value="customer">Customer</option>
-            <option value="supplier">Supplier</option>
-          </NativeSelect>
-          <TextInput placeholder="Opening Balance" inputMode="decimal" value={partyOpeningBal} onChange={e => setPartyOpeningBal(e.target.value)} />
-          <NativeSelect value={partySide || (partyKind === "supplier" ? "cr" : "dr")} onChange={e => setPartySide(e.target.value as any)}>
-            <option value="dr">Dr (they owe us / lena)</option>
-            <option value="cr">Cr (we owe them / dena)</option>
-          </NativeSelect>
-          <TextInput placeholder="Credit Limit (Days)" inputMode="numeric" value={partyCreditDays} onChange={e => setPartyCreditDays(e.target.value)} />
-        </div>
-        <div className="flex gap-2 mt-2">
-          <Button variant="outline" onClick={handleSaveParty}>{editPartyId ? "Update Party" : "Add Party"}</Button>
-          {editPartyId && <Button variant="outline" onClick={() => { setEditPartyId(""); setPartyName(""); setPartyOpeningBal(""); setPartySide(""); setPartyCreditDays("7"); }}>Cancel Edit</Button>}
-        </div>
-      </Card>
-
-      <Card>
-        <h2 className="font-medium">Manage Items</h2>
-        <div className="mt-3 space-y-2">
-          {items.map(i => (
-            <div key={i.id} className="flex flex-wrap justify-between items-center gap-x-3 gap-y-0.5 border-b pb-1.5 text-sm">
-              <span>{i.name}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-muted">Base: ₹{i.baseRate} | Open: {formatKg(i.openingStock || 0)}</span>
-                <button onClick={() => { setEditItemId(i.id); setItemName(i.name); setItemRate(String(i.baseRate)); setItemOpeningStock(String(i.openingStock)); window.scrollTo(0, document.body.scrollHeight); }} className="text-primary text-xs hover:underline">Edit</button>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2">
-          <TextInput placeholder="Item name" value={itemName} onChange={e => setItemName(e.target.value)} />
-          <TextInput placeholder="Base rate" inputMode="decimal" value={itemRate} onChange={e => setItemRate(e.target.value)} />
-          <TextInput placeholder="Opening Stock (Kg)" inputMode="decimal" value={itemOpeningStock} onChange={e => setItemOpeningStock(e.target.value)} />
-        </div>
-        <div className="flex gap-2 mt-2">
-          <Button variant="outline" onClick={handleSaveItem}>{editItemId ? "Update Item" : "Add Item"}</Button>
-          {editItemId && <Button variant="outline" onClick={() => { setEditItemId(""); setItemName(""); setItemRate(""); setItemOpeningStock(""); }}>Cancel Edit</Button>}
+           <Button className="shrink-0 whitespace-nowrap" onClick={handleUpdatePin}>Update PIN</Button>
         </div>
       </Card>
 
