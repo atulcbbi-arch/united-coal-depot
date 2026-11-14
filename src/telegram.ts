@@ -1,22 +1,15 @@
+import { supabase } from "./supabase";
+
+// Sends via /api/notify (server keeps the bot token secret).
 export async function sendTelegramNotification(message: string) {
-  const token = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
-  const chatId = import.meta.env.VITE_TELEGRAM_CHAT_ID;
-
-  if (!token || !chatId) {
-    console.warn("Telegram token or chat ID is missing");
-    return;
-  }
-
   try {
-    const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    await fetch(url, {
+    const { data } = await supabase.auth.getSession();
+    const jwt = data.session?.access_token;
+    if (!jwt) return;
+    await fetch("/api/notify", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: "Markdown",
-      }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` },
+      body: JSON.stringify({ text: message }),
     });
   } catch (error) {
     console.error("Failed to send Telegram notification:", error);

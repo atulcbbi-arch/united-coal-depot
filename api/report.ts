@@ -3,8 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 export default async function handler(req: any, res: any) {
   // 1. Backend ke liye Supabase ko environment variables se connect karna
   const supabase = createClient(
-    process.env.VITE_SUPABASE_URL!,
-    process.env.VITE_SUPABASE_ANON_KEY!
+    (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)!,
+    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY)!,
+    { auth: { persistSession: false } }
   );
 
   const time = req.query.time || "evening";
@@ -77,11 +78,19 @@ export default async function handler(req: any, res: any) {
   } else {
     // === EVENING 9 PM CLOSING REPORT ===
     const [
-      { data: bills }, { data: purchases }
+      { data: bills }, { data: purchases }, { data: money }
     ] = await Promise.all([
       supabase.from("bills").select("*").eq("date", todayStr).eq("isPosted", true),
-      supabase.from("purchases").select("*").eq("date", todayStr)
+      supabase.from("purchases").select("*").eq("date", todayStr),
+      supabase.from("money").select("*").eq("date", todayStr)
     ]);
+    let recd = 0, paid = 0, exp = 0;
+    let moneyStr = "";
+    (money || []).forEach((m: any) => {
+      if (m.type === "payment_in") { recd += m.amount; moneyStr += `- 🟢 ${m.partyName || "-"}: ₹${m.amount}\n`; }
+      else if (m.type === "payment_out") { paid += m.amount; moneyStr += `- 🔴 ${m.partyName || "-"}: ₹${m.amount}\n`; }
+      else if (m.type === "expense") { exp += m.amount; moneyStr += `- 🧾 ${m.notes || "Expense"}: ₹${m.amount}\n`; }
+    });
 
     let cashSaleTotal = 0;
     const itemSales: Record<string, { kg: number, amt: number }> = {};
@@ -117,14 +126,15 @@ export default async function handler(req: any, res: any) {
     message = `🌃 *EOD Closing Report (${todayStr})*\n\n` +
               `💰 *Total Cash / Advance Received:* ₹${cashSaleTotal}\n\n` +
               `📈 *Item-wise Sales Today*\n${saleStr || "No sales today\n"}\n` +
-              `🛒 *Item-wise Purchases Today*\n${purStr || "No purchases today\n"}`;
+              `🛒 *Item-wise Purchases Today*\n${purStr || "No purchases today\n"}\n` +
+              `💸 *Ledger Today*  In ₹${recd} | Out ₹${paid} | Exp ₹${exp}\n${moneyStr || "No payments today\n"}`;
   }
 
   // 3. Telegram ko message bhej do
-  const token = process.env.VITE_TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.VITE_TELEGRAM_CHAT_ID;
+  const token = process.env.TELEGRAM_BOT_TOKEN || process.env.VITE_TELEGRAM_BOT_TOKEN;
+  const chatIds = (process.env.TELEGRAM_CHAT_ID || process.env.VITE_TELEGRAM_CHAT_ID || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-  if (token && chatId && message) {
+  for (const chatId of chatIds) if (token && message) {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -1,124 +1,52 @@
-# United Coal Depot — Firebase edition
+# United Coal Depot — v2 (full Telegram voice control)
 
-This is the full source of **United Coal Depot**. It is set up to run on **your** Firebase project:
+Stack: Vite + React on Vercel, data in Supabase, Telegram bot for reports and voice/text entries.
 
-- **Google sign-in** via Firebase Auth
-- **Parties, books, stock** in Cloud Firestore (your data, on your account)
-- **Hosting** at `https://YOUR-PROJECT.web.app`
+## Telegram bot setup (one time, ~10 min)
 
-The Grok preview is separate. This zip is what you own.
+1. **Supabase → SQL Editor** → paste `supabase/telegram-bot.sql` → Run.
+2. **Supabase → Project Settings → API** → copy the `service_role` key.
+3. **Google AI Studio** (aistudio.google.com → Get API key) → create a Gemini key (free tier is enough).
+4. **Vercel → Project → Settings → Environment Variables** → add:
+   - `SUPABASE_SERVICE_ROLE_KEY` = key from step 2
+   - `GEMINI_API_KEY` = key from step 3
+   - `TELEGRAM_BOT_TOKEN` = same value as your current `VITE_TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID` = same value as your current `VITE_TELEGRAM_CHAT_ID`
+5. Push this code to GitHub (Vercel redeploys).
+6. Open in browser: `https://united-coal-depot.vercel.app/api/telegram?setup=1`
+   Every line must say OK / set.
+7. In Telegram send the bot: `/help`
 
-Same books rules as the preview:
+## Using it
+Voice note or text, e.g. *"Payment recd Rs 50000 from ABC Bakers today cash"* → bot shows the draft →
+tap ✅ Confirm & Post. Missing info (party, cash/bank, item) is asked with buttons. Say *undo* to reverse
+the last Telegram entry. Ask *"ABC Bakers balance"* or *"cash balance"* anytime.
 
-- Opening balances / stock as of **31 Aug 2026**
-- Live entries from **1 Sep 2026**
-- Date on every sale, purchase, payment, expense, delivery, stock adj.
-- Chase checkbox on the party list (saves immediately)
-- Number fields start empty, no spinner arrows
+## After it works (security)
+Delete `VITE_TELEGRAM_BOT_TOKEN` and `VITE_TELEGRAM_CHAT_ID` from Vercel. The old app shipped the bot
+token inside the website; this version doesn't. For full safety, BotFather → /revoke → put the new token in
+`TELEGRAM_BOT_TOKEN` → open the setup link (step 6) again.
 
----
+## v2 — what the bot can do (voice or text)
+- Money: payment in / out, expenses, post-dated cheque received, cheque cleared
+- Sales: walk-in, credit, scheduled delivery, mark delivered, cancel delivery
+- Purchases (cash/credit), sales return, purchase return
+- Setup: new party (with opening balance Dr/Cr, phone, address, credit days), change opening balance,
+  new item (rate + opening stock), change rate / opening stock, stock shortage/excess, new cash/bank account
+- Fix: undo last entry, delete any entry ("delete ABC payment 5000")
+- Ask: party balance, party khata (statement), stock, pending deliveries, cheques, today's report, all parties
+- Many entries in one voice note (e.g. 20 opening balances) → one list card → "Post all ready"
+- Menu commands: /today /stock /balance /pending /cheques /parties /undo
 
-## 1. One-time tools on your computer
+Returns are saved as minus-quantity sales/purchases, so stock, balances and reports adjust automatically.
+Stock shortage/excess adjusts the item's opening stock.
 
-1. Install **Node.js 22** from [https://nodejs.org](https://nodejs.org) (LTS).
-2. Unzip this folder. Open a terminal **inside** `united-coal-depot`.
-3. Run:
+## v2 fixes
+- Deleting a pending (uncleared) cheque in the app wrongly changed the party balance.
 
-```bash
-npm install
-```
-
----
-
-## 2. Create a Firebase project
-
-1. Open [https://console.firebase.google.com](https://console.firebase.google.com) and sign in with Google.
-2. **Add project** → name it e.g. `united-coal-depot` → continue (Google Analytics optional).
-3. Click the **web** icon (`</>`) to add a web app. Nickname: `depot`. Do **not** tick Hosting yet. Register.
-4. Copy the `firebaseConfig` values (apiKey, authDomain, projectId, …).
-
-### Authentication
-
-1. Build → **Authentication** → Get started.
-2. Sign-in method → **Google** → Enable → save.
-3. Later, after hosting is live, add your site under Authentication → Settings → **Authorized domains** (Firebase usually adds `YOUR-PROJECT.web.app` itself).
-
-### Firestore
-
-1. Build → **Firestore Database** → Create database.
-2. Start in **production mode**.
-3. Pick a region close to you (e.g. `asia-south1`).
-
----
-
-## 3. Put your keys in the app
-
-In the project folder:
-
-```bash
-cp .env.example .env
-cp .firebaserc.example .firebaserc
-```
-
-Edit `.env` and paste the values from Firebase:
-
-```
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project
-VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-```
-
-Edit `.firebaserc` and replace `YOUR_FIREBASE_PROJECT_ID` with the same project id.
-
----
-
-## 4. Deploy
-
-```bash
-npx firebase-tools login
-npm run deploy
-```
-
-The first command opens Google in the browser so Firebase CLI can use your account. The second builds the app and uploads:
-
-- Hosting (the website)
-- Firestore rules (only you can read/write your own books)
-
-When it finishes you get a URL like:
-
-**https://united-coal-depot.web.app**
-
-Open it → Continue with Google.
-
----
-
-## 5. Try it locally first (optional)
-
-```bash
-npm run dev
-```
-
-Open the local address it prints, usually `http://localhost:5173`. Google sign-in needs `localhost` in Authentication → Authorized domains (it is there by default).
-
----
-
-## Data
-
-Each Google account gets its own parties and entries under `users/{yourUid}/...` in Firestore. Nobody else can see them (see `firestore.rules`).
-
-This Firebase copy starts empty. It does **not** automatically import parties from the Grok preview. Add parties again once, then they stay in your Firebase project.
-
----
-
-## Useful commands
-
-| Command | What it does |
-|---|---|
-| `npm run dev` | Run on your computer |
-| `npm run build` | Build for hosting |
-| `npm run deploy` | Build + upload to Firebase |
-
-To update after you change code: `npm run deploy` again.
+## v1 changes
+- `api/telegram.ts` — new: voice/text → draft → confirm → posts payment in/out, expense, sale (cash/credit/scheduled),
+  purchase; creates new parties; undo; balance queries. Only your chat id is obeyed.
+- `api/notify.ts` + `src/telegram.ts` — app alerts go through the server; bot token no longer in the website.
+- `src/lib/store.ts` — FIX: editing a payment or purchase used to add the amount to balances twice.
+- `api/report.ts` — EOD report now includes payments received/paid and expenses.

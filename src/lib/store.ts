@@ -163,7 +163,19 @@ export async function cancelBill(uid: string, billId: string) {
 export async function savePurchase(uid: string, purchase: Omit<Purchase, "id">, id?: string) {
   let purId = id;
   if (id) {
-    await supabase.from("purchases").update(purchase).eq("id", id);
+    // FIX: undo the old effect before applying the edited one (was double-counting on edit)
+    const { data: old } = await supabase.from("purchases").select("*").eq("id", id).single();
+    if (old) {
+      if (old.accountId) {
+        const { data: a } = await supabase.from("accounts").select("*").eq("id", old.accountId).single();
+        if (a) await supabase.from("accounts").update({ balance: (a.balance || 0) + old.total }).eq("id", old.accountId);
+      } else if (old.partyId) {
+        const { data: p } = await supabase.from("parties").select("*").eq("id", old.partyId).single();
+        if (p) await supabase.from("parties").update({ currentBalance: (p.currentBalance || 0) + old.total }).eq("id", old.partyId);
+      }
+    }
+    const { id: _drop, ...clean } = purchase as any;
+    await supabase.from("purchases").update(clean).eq("id", id);
   } else {
     const { data } = await supabase.from("purchases").insert(purchase).select().single();
     purId = data.id;
@@ -204,7 +216,21 @@ export async function revertPurchase(uid: string, id: string) {
 export async function saveMoney(uid: string, entry: Omit<MoneyEntry, "id">, id?: string) {
   let moneyId = id;
   if (id) {
-    await supabase.from("money").update(entry).eq("id", id);
+    // FIX: undo the old effect before applying the edited one (was double-counting on edit)
+    const { data: old } = await supabase.from("money").select("*").eq("id", id).single();
+    if (old && !(old.type === "pdc_in" && old.status === "pending")) {
+      const isIn = old.type === "payment_in" || old.type === "pdc_in";
+      if (old.accountId) {
+        const { data: a } = await supabase.from("accounts").select("*").eq("id", old.accountId).single();
+        if (a) await supabase.from("accounts").update({ balance: (a.balance || 0) + (isIn ? -old.amount : old.amount) }).eq("id", old.accountId);
+      }
+      if (old.partyId) {
+        const { data: p } = await supabase.from("parties").select("*").eq("id", old.partyId).single();
+        if (p) await supabase.from("parties").update({ currentBalance: (p.currentBalance || 0) + (isIn ? old.amount : -old.amount) }).eq("id", old.partyId);
+      }
+    }
+    const { id: _drop, ...clean } = entry as any;
+    await supabase.from("money").update(clean).eq("id", id);
   } else {
     const { data } = await supabase.from("money").insert(entry).select().single();
     moneyId = data.id;
@@ -231,7 +257,7 @@ export async function saveMoney(uid: string, entry: Omit<MoneyEntry, "id">, id?:
   }
   
   // TELEGRAM LOGIC: Trigger alert for Ledger Payments with live balance
-  if (entry.partyId && (entry.type === "payment_in" || entry.type === "payment_out")) {
+  if (!id && entry.partyId && (entry.type === "payment_in" || entry.type === "payment_out")) {
     const actionStr = entry.type === "payment_in" ? "Received from" : "Paid to";
     const icon = entry.type === "payment_in" ? "🟢" : "🔴";
     const { data: updatedParty } = await supabase.from("parties").select("currentBalance").eq("id", entry.partyId).single();
@@ -248,6 +274,10 @@ export async function saveMoney(uid: string, entry: Omit<MoneyEntry, "id">, id?:
 export async function revertMoney(uid: string, id: string) {
   const { data: old } = await supabase.from("money").select("*").eq("id", id).single();
   if (!old) return;
+  if (old.type === "pdc_in" && old.status === "pending") { // FIX: pending cheque never touched balances
+    await supabase.from("money").delete().eq("id", id);
+    return;
+  }
 
   if (old.accountId) {
     const { data: aSnap } = await supabase.from("accounts").select("*").eq("id", old.accountId).single();
