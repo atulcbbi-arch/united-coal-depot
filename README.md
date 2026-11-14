@@ -1,4 +1,14 @@
-# United Coal Depot — v5
+# United Coal Depot — v6
+
+## v6 changes (reports)
+- Morning report now starts with "Deliveries Scheduled Today" (plus any still pending from earlier days)
+  and "Cheques To Present Today" (post-dated cheques dated today or earlier, with total).
+- EOD report: for every cheque that was due, the bot asks "Was it presented in the bank today?" with buttons:
+  "Yes — deposited in <bank>" (marks it cleared: bank up, party balance down; "undo" reverses it) or
+  "Not yet — move to next bank day" (skips Sundays and 2nd/4th Saturdays; asked again that evening).
+  A cheque that is not answered stays due and is asked again the next evening.
+
+# (v5)
 
 ## v5 changes (entry screens)
 - Create Bill is one form: Cash / Credit / Advance paid. Only the needed fields show. Several items on every bill,
