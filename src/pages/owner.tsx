@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, Card, Label, NativeSelect, TextInput, TextArea } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
-import { dashboard, factoryReset, listAccounts, listParties, listItems, saveBill, saveMoney, saveItem, saveParty, saveAccount, cancelBill, deleteAccount, deleteParty, deleteItem, savePurchase, clearCheque, saveSecurityPin, revertMoney, revertPurchase, revertBill } from "@/lib/store";
-import { type Account, type BillLine, type Party, type Item, type SaleType, type Bill, type MoneyEntry, type Purchase } from "@/lib/types";
+import { dashboard, factoryReset, listAccounts, listParties, listItems, saveBill, saveMoney, saveItem, saveParty, saveAccount, cancelBill, deleteAccount, deleteParty, deleteItem, savePurchase, clearCheque, saveSecurityPin } from "@/lib/store";
+import { type Account, type BillLine, type Party, type Item, type Bill, type MoneyEntry } from "@/lib/types";
 import { formatINR, formatKg, todayISO } from "@/lib/utils";
 
 const n = (x: string) => Number(x) || 0;
@@ -146,10 +146,10 @@ export function Today() {
         <h2 className="font-display text-lg font-semibold text-amber-900">Priority Insights</h2>
         <div className="mt-3 space-y-2 text-sm">
           {d.pendingCheques.map(m => (
-            <div key={m.id} className="p-2 bg-white rounded border border-amber-200 flex justify-between items-center">
+            <div key={m.id} className="p-2 bg-white rounded border border-amber-200 flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center">
               <span className="text-amber-900 font-medium">🏛️ Present Cheque #{m.chequeNumber} from {m.partyName} ({formatINR(m.amount)})</span>
               <div className="flex gap-2">
-                <NativeSelect className="w-32 text-xs" value={chequeBank} onChange={e => setChequeBank(e.target.value)}>
+                <NativeSelect className="h-9 min-w-0 flex-1 text-sm sm:w-36 sm:flex-none" value={chequeBank} onChange={e => setChequeBank(e.target.value)}>
                   <option value="">Select Bank</option>
                   {d.accounts.filter(a => a.type === "bank").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </NativeSelect>
@@ -897,267 +897,7 @@ export function MoneyPage() {
   );
 }
 
-function downloadCSV(data: any[][], filename: string) {
-  const csv = data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-}
-
-export function Reports() {
-  const { user } = useAuth();
-  const [d, setD] = useState<Awaited<ReturnType<typeof dashboard>> | null>(null);
-  const [tab, setTab] = useState<"ledger"|"stock"|"debtors"|"sales"|"purchases">("ledger");
-  
-  const [fromDate, setFromDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
-  const [toDate, setToDate] = useState(todayISO());
-  const [partyId, setPartyId] = useState("");
-
-  const [editMoney, setEditMoney] = useState<MoneyEntry | null>(null);
-  const [editPurchase, setEditPurchase] = useState<Purchase | null>(null);
-  const [editAmount, setEditAmount] = useState("");
-  const [editDate, setEditDate] = useState("");
-  const [editNotes, setEditNotes] = useState("");
-  const [editKg, setEditKg] = useState("");
-  const [editRate, setEditRate] = useState("");
-
-  const refresh = () => { if (user) dashboard(user.uid).then(setD); };
-  useEffect(() => { refresh(); }, [user]);
-
-  if (!d) return <p className="p-4">Loading reports…</p>;
-
-  const handleUpdateMoney = async () => {
-    if (!user || !editMoney) return;
-    await revertMoney(user.uid, editMoney.id!);
-    await saveMoney(user.uid, { ...editMoney, amount: n(editAmount), date: editDate, notes: editNotes }, editMoney.id);
-    setEditMoney(null);
-    refresh();
-  };
-
-  const handleUpdatePurchase = async () => {
-    if (!user || !editPurchase) return;
-    await revertPurchase(user.uid, editPurchase.id!);
-    await savePurchase(user.uid, { ...editPurchase, kg: n(editKg), rate: n(editRate), total: n(editKg) * n(editRate), date: editDate }, editPurchase.id);
-    setEditPurchase(null);
-    refresh();
-  };
-
-  const handleDeleteBill = async (b: Bill) => {
-    if (!user || !b.id || !confirm("Permanently delete this bill? This will reverse stock and ledger balances.")) return;
-    await revertBill(user.uid, b.id);
-    refresh();
-  };
-
-  let ledgerEntries: any[] = [];
-  let selectedParty: Party | undefined;
-  let runningBal = 0;
-
-  if (partyId) {
-    selectedParty = d.parties.find(p => p.id === partyId);
-    runningBal = selectedParty?.openingBalance || 0; 
-
-    d.bills.filter(b => b.partyId === partyId && b.isPosted && b.date < fromDate).forEach(b => runningBal += b.total);
-    d.purchases.filter(p => p.partyId === partyId && p.date < fromDate).forEach(p => runningBal -= p.total);
-    d.money.filter(m => m.partyId === partyId && m.date < fromDate).forEach(m => {
-      if (m.type === "payment_in" || m.status === "cleared") runningBal -= m.amount;
-      else if (m.type === "payment_out") runningBal += m.amount;
-    });
-
-    d.bills.filter(b => b.partyId === partyId && b.isPosted && b.date >= fromDate && b.date <= toDate).forEach(b => {
-      ledgerEntries.push({ date: b.date, desc: `Bill`, debit: b.total, credit: 0, sort: new Date(b.date).getTime(), source: b });
-    });
-    d.purchases.filter(p => p.partyId === partyId && p.date >= fromDate && p.date <= toDate).forEach(p => {
-      ledgerEntries.push({ date: p.date, desc: `Purchase (${p.itemName})`, debit: 0, credit: p.total, sort: new Date(p.date).getTime(), source: p });
-    });
-    d.money.filter(m => m.partyId === partyId && m.date >= fromDate && m.date <= toDate).forEach(m => {
-      if (m.type === "payment_in" || m.status === "cleared") ledgerEntries.push({ date: m.date, desc: `Payment In: ${m.notes}`, debit: 0, credit: m.amount, sort: new Date(m.date).getTime(), source: m });
-      else if (m.type === "payment_out") ledgerEntries.push({ date: m.date, desc: `Payment Out: ${m.notes}`, debit: m.amount, credit: 0, sort: new Date(m.date).getTime(), source: m });
-    });
-    ledgerEntries.sort((a, b) => a.sort - b.sort);
-  }
-
-  const sales = d.bills.filter(b => b.isPosted && b.date >= fromDate && b.date <= toDate);
-  const purchases = d.purchases.filter(p => p.date >= fromDate && p.date <= toDate);
-  const debtors = d.parties.filter(p => p.currentBalance !== 0).sort((a, b) => b.currentBalance - a.currentBalance);
-
-  return (
-    <div className="space-y-4 pb-12">
-      <h1 className="font-display text-3xl">Reports</h1>
-      <Card className="flex flex-col md:flex-row gap-2">
-        <NativeSelect value={tab} onChange={e => setTab(e.target.value as any)}>
-          <option value="ledger">Party Ledger</option>
-          <option value="sales">Daily Sales</option>
-          <option value="purchases">Purchases</option>
-          <option value="stock">Stock Situation</option>
-          <option value="debtors">Debtor / Creditor List</option>
-        </NativeSelect>
-        {tab !== "stock" && tab !== "debtors" && (
-          <div className="flex gap-2">
-            <TextInput type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} />
-            <TextInput type="date" value={toDate} onChange={e => setToDate(e.target.value)} />
-          </div>
-        )}
-      </Card>
-
-      {editMoney && (
-        <Card className="bg-amber-50 border-amber-200">
-          <h3 className="font-bold mb-2">Edit Money Entry</h3>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <TextInput type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
-            <TextInput placeholder="Amount" inputMode="decimal" value={editAmount} onChange={e => setEditAmount(e.target.value)} />
-            <TextInput className="col-span-2" placeholder="Notes" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleUpdateMoney}>Save Update</Button>
-            <Button variant="outline" onClick={() => setEditMoney(null)}>Cancel</Button>
-          </div>
-        </Card>
-      )}
-
-      {editPurchase && (
-        <Card className="bg-amber-50 border-amber-200">
-          <h3 className="font-bold mb-2">Edit Purchase ({editPurchase.itemName})</h3>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            <TextInput type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
-            <TextInput placeholder="Kg" inputMode="decimal" value={editKg} onChange={e => setEditKg(e.target.value)} />
-            <TextInput placeholder="Rate" inputMode="decimal" value={editRate} onChange={e => setEditRate(e.target.value)} />
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleUpdatePurchase}>Save Update</Button>
-            <Button variant="outline" onClick={() => setEditPurchase(null)}>Cancel</Button>
-          </div>
-        </Card>
-      )}
-
-      {tab === "ledger" && (
-        <Card className="overflow-x-auto">
-          <NativeSelect className="mb-4" value={partyId} onChange={e => setPartyId(e.target.value)}>
-            <option value="">-- Select Party --</option>
-            <optgroup label="Customers (Dr)">
-               {d.parties.filter(p => p.kind === "customer").map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </optgroup>
-            <optgroup label="Suppliers (Cr)">
-               {d.parties.filter(p => p.kind === "supplier").map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </optgroup>
-          </NativeSelect>
-          {selectedParty && (
-            <>
-              <div className="flex justify-between items-center mb-4 border-t pt-4">
-                <h2 className="font-bold text-lg">{selectedParty.name}</h2>
-                <Button size="sm" onClick={() => downloadCSV([["Date", "Particulars", "Debit", "Credit", "Balance"], ...ledgerEntries.map(e => [e.date, e.desc, e.debit, e.credit])], `${selectedParty!.name}_ledger.csv`)}>Export CSV</Button>
-              </div>
-              <table className="w-full text-sm text-left whitespace-nowrap">
-                <thead><tr className="border-b"><th className="py-2">Date</th><th>Particulars</th><th className="text-right">Debit (+)</th><th className="text-right">Credit (-)</th><th className="text-right">Balance</th><th></th></tr></thead>
-                <tbody>
-                  <tr className="border-b text-muted bg-surface/50">
-                    <td className="py-2">{fromDate}</td>
-                    <td className="py-2 font-medium">Opening Balance (Brought Forward)</td>
-                    <td className="py-2 text-right">--</td>
-                    <td className="py-2 text-right">--</td>
-                    <td className="py-2 text-right font-bold text-primary">{formatPartyBal(runningBal)}</td>
-                    <td></td>
-                  </tr>
-                  {ledgerEntries.map((e, i) => {
-                    runningBal = runningBal + e.debit - e.credit;
-                    return (
-                      <tr key={i} className="border-b last:border-0 hover:bg-surface/50 group">
-                        <td className="py-2">{e.date}</td><td>{e.desc}</td><td className="text-right text-danger">{e.debit > 0 ? formatINR(e.debit) : ""}</td><td className="text-right text-emerald-600">{e.credit > 0 ? formatINR(e.credit) : ""}</td><td className="text-right font-medium">{formatPartyBal(runningBal)}</td>
-                        <td className="text-right pl-4">
-                          {e.source.type ? (
-                            <button className="text-primary text-xs opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => { setEditMoney(e.source); setEditAmount(String(e.source.amount)); setEditDate(e.source.date); setEditNotes(e.source.notes); window.scrollTo(0, 0); }}>Edit</button>
-                          ) : e.source.itemName ? (
-                            <button className="text-primary text-xs opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => { setEditPurchase(e.source); setEditKg(String(e.source.kg)); setEditRate(String(e.source.rate)); setEditDate(e.source.date); window.scrollTo(0, 0); }}>Edit</button>
-                          ) : (
-                            <button className="text-danger text-xs opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleDeleteBill(e.source)}>Delete</button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </>
-          )}
-        </Card>
-      )}
-
-      {tab === "sales" && (
-        <Card className="overflow-x-auto">
-          <div className="flex justify-between mb-3">
-            <h2 className="font-bold">Sales Register</h2>
-            <Button size="sm" onClick={() => downloadCSV([["Date", "Customer", "Type", "Total"], ...sales.map(s => [s.date, s.customerName, s.saleType, s.total])], "sales.csv")}>Export CSV</Button>
-          </div>
-          <table className="w-full text-sm text-left whitespace-nowrap">
-            <thead><tr className="border-b"><th className="py-2">Date</th><th>Customer</th><th>Type</th><th className="text-right">Total</th><th></th></tr></thead>
-            <tbody>
-              {sales.map(s => (
-                <tr key={s.id} className="border-b last:border-0 hover:bg-surface/50 group">
-                  <td className="py-2">{s.date}</td><td>{s.customerName}</td><td className="text-muted">{s.saleType}</td><td className="text-right">{formatINR(s.total)}</td>
-                  <td className="text-right pl-4"><button className="text-danger text-xs opacity-0 group-hover:opacity-100" onClick={() => handleDeleteBill(s)}>Delete</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
-      {tab === "purchases" && (
-        <Card className="overflow-x-auto">
-          <div className="flex justify-between mb-3">
-            <h2 className="font-bold">Purchase Register</h2>
-            <Button size="sm" onClick={() => downloadCSV([["Date", "Supplier", "Item", "Kg", "Total"], ...purchases.map(p => [p.date, p.supplierName, p.itemName, p.kg, p.total])], "purchases.csv")}>Export CSV</Button>
-          </div>
-          <table className="w-full text-sm text-left whitespace-nowrap">
-            <thead><tr className="border-b"><th className="py-2">Date</th><th>Supplier</th><th>Item</th><th className="text-right">Total</th><th></th></tr></thead>
-            <tbody>
-              {purchases.map(p => (
-                <tr key={p.id} className="border-b last:border-0 hover:bg-surface/50 group">
-                  <td className="py-2">{p.date}</td><td>{p.supplierName}</td><td className="text-muted">{p.itemName} ({p.kg}kg)</td><td className="text-right">{formatINR(p.total)}</td>
-                  <td className="text-right pl-4"><button className="text-primary text-xs opacity-0 group-hover:opacity-100" onClick={() => { setEditPurchase(p); setEditKg(String(p.kg)); setEditRate(String(p.rate)); setEditDate(p.date); window.scrollTo(0, 0); }}>Edit</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
-      {tab === "stock" && (
-        <Card className="overflow-x-auto">
-           <div className="flex justify-between mb-3">
-            <h2 className="font-bold">Current Godown Stock</h2>
-            <Button size="sm" onClick={() => downloadCSV([["Item", "Current Kg", "Status", "Sold 30d"], ...d.stockInsights.map(s => [s.itemName, s.currentKg, s.status, s.soldLast30DaysKg])], "stock.csv")}>Export CSV</Button>
-          </div>
-          <table className="w-full text-sm text-left whitespace-nowrap">
-            <thead><tr className="border-b"><th className="py-2">Item</th><th className="text-right">Current Stock</th><th className="text-right">Sold (30d)</th></tr></thead>
-            <tbody>
-              {d.stockInsights.map(s => (
-                <tr key={s.itemId} className="border-b last:border-0"><td className="py-2">{s.itemName}</td><td className="text-right font-bold">{formatKg(s.currentKg)}</td><td className="text-right text-muted">{formatKg(s.soldLast30DaysKg)}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
-      {tab === "debtors" && (
-        <Card className="overflow-x-auto">
-           <div className="flex justify-between mb-3">
-            <h2 className="font-bold">Debtors & Creditors</h2>
-            <Button size="sm" onClick={() => downloadCSV([["Party", "Balance"], ...debtors.map(p => [p.name, p.currentBalance])], "debtors.csv")}>Export CSV</Button>
-          </div>
-          <table className="w-full text-sm text-left whitespace-nowrap">
-            <thead><tr className="border-b"><th className="py-2">Party</th><th className="text-right">Balance</th></tr></thead>
-            <tbody>
-              {debtors.map(p => (
-                <tr key={p.id} className="border-b last:border-0"><td className="py-2">{p.name}</td><td className={`text-right font-medium ${p.currentBalance > 0 ? "text-danger" : "text-emerald-600"}`}>{formatPartyBal(p.currentBalance)}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-    </div>
-  );
-}
+export { Reports } from "./reports";
 
 export function Settings() {
   const { user } = useAuth();
@@ -1175,6 +915,7 @@ export function Settings() {
   const [partyKind, setPartyKind] = useState<"customer"|"supplier">("customer");
   const [partyCreditDays, setPartyCreditDays] = useState("7");
   const [partyOpeningBal, setPartyOpeningBal] = useState("");
+  const [partySide, setPartySide] = useState<"" | "dr" | "cr">("");
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [editAccId, setEditAccId] = useState("");
@@ -1229,18 +970,20 @@ export function Settings() {
 
   const handleSaveParty = async () => {
     if (!user || !partyName) return;
-    let ob = n(partyOpeningBal);
-    if (partyKind === "supplier" && ob > 0) ob = -ob;
+    let ob = Math.abs(n(partyOpeningBal));
+    // FIX: explicit Dr/Cr; default = Dr for customer, Cr for supplier (edits keep the saved side)
+    const side = partySide || (partyKind === "supplier" ? "cr" : "dr");
+    if (side === "cr") ob = -ob;
 
     await saveParty(user.uid, { 
       name: partyName, 
       kind: partyKind, 
       creditDays: n(partyCreditDays) || 7, 
       openingBalance: ob,
-      phone: "",
-      address: ""
+      // only blank these for a NEW party; an edit must not wipe a saved phone/address
+      ...(editPartyId ? {} : { phone: "", address: "" })
     }, editPartyId || undefined);
-    setEditPartyId(""); setPartyName(""); setPartyOpeningBal(""); setPartyCreditDays("7");
+    setEditPartyId(""); setPartyName(""); setPartyOpeningBal(""); setPartySide(""); setPartyCreditDays("7");
     refresh();
   };
 
@@ -1267,7 +1010,7 @@ export function Settings() {
         <h2 className="font-medium">Manage Accounts</h2>
         <div className="mt-3 space-y-2">
           {accounts.map(a => (
-            <div key={a.id} className="flex justify-between items-center border-b pb-1 text-sm">
+            <div key={a.id} className="flex flex-wrap justify-between items-center gap-x-3 gap-y-0.5 border-b pb-1.5 text-sm">
               <span>{a.name} ({a.type})</span>
               <div className="flex items-center gap-3">
                 <span className="text-muted">Balance: {formatINR(a.balance || 0)}</span>
@@ -1294,11 +1037,11 @@ export function Settings() {
         <h2 className="font-medium">Manage Parties</h2>
         <div className="mt-3 space-y-2">
           {parties.map(p => (
-            <div key={p.id} className="flex justify-between items-center border-b pb-1 text-sm">
+            <div key={p.id} className="flex flex-wrap justify-between items-center gap-x-3 gap-y-0.5 border-b pb-1.5 text-sm">
               <span>{p.name} ({p.kind})</span>
               <div className="flex items-center gap-3">
                 <span className="text-muted">Balance: {formatPartyBal(p.currentBalance)}</span>
-                <button onClick={() => { setEditPartyId(p.id); setPartyName(p.name); setPartyKind(p.kind); setPartyOpeningBal(String(Math.abs(p.openingBalance))); setPartyCreditDays(String(p.creditDays)); window.scrollTo(0, document.body.scrollHeight); }} className="text-primary text-xs hover:underline">Edit</button>
+                <button onClick={() => { setEditPartyId(p.id); setPartyName(p.name); setPartyKind(p.kind); setPartyOpeningBal(String(Math.abs(p.openingBalance))); setPartySide(p.openingBalance < 0 ? "cr" : p.openingBalance > 0 ? "dr" : ""); setPartyCreditDays(String(p.creditDays)); window.scrollTo(0, document.body.scrollHeight); }} className="text-primary text-xs hover:underline">Edit</button>
               </div>
             </div>
           ))}
@@ -1310,11 +1053,15 @@ export function Settings() {
             <option value="supplier">Supplier</option>
           </NativeSelect>
           <TextInput placeholder="Opening Balance" inputMode="decimal" value={partyOpeningBal} onChange={e => setPartyOpeningBal(e.target.value)} />
+          <NativeSelect value={partySide || (partyKind === "supplier" ? "cr" : "dr")} onChange={e => setPartySide(e.target.value as any)}>
+            <option value="dr">Dr (they owe us / lena)</option>
+            <option value="cr">Cr (we owe them / dena)</option>
+          </NativeSelect>
           <TextInput placeholder="Credit Limit (Days)" inputMode="numeric" value={partyCreditDays} onChange={e => setPartyCreditDays(e.target.value)} />
         </div>
         <div className="flex gap-2 mt-2">
           <Button variant="outline" onClick={handleSaveParty}>{editPartyId ? "Update Party" : "Add Party"}</Button>
-          {editPartyId && <Button variant="outline" onClick={() => { setEditPartyId(""); setPartyName(""); setPartyOpeningBal(""); setPartyCreditDays("7"); }}>Cancel Edit</Button>}
+          {editPartyId && <Button variant="outline" onClick={() => { setEditPartyId(""); setPartyName(""); setPartyOpeningBal(""); setPartySide(""); setPartyCreditDays("7"); }}>Cancel Edit</Button>}
         </div>
       </Card>
 
@@ -1322,7 +1069,7 @@ export function Settings() {
         <h2 className="font-medium">Manage Items</h2>
         <div className="mt-3 space-y-2">
           {items.map(i => (
-            <div key={i.id} className="flex justify-between items-center border-b pb-1 text-sm">
+            <div key={i.id} className="flex flex-wrap justify-between items-center gap-x-3 gap-y-0.5 border-b pb-1.5 text-sm">
               <span>{i.name}</span>
               <div className="flex items-center gap-3">
                 <span className="text-muted">Base: ₹{i.baseRate} | Open: {formatKg(i.openingStock || 0)}</span>

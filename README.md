@@ -1,4 +1,18 @@
-# United Coal Depot — v2 (full Telegram voice control)
+# United Coal Depot — v4
+
+## v4 changes (app screens)
+- Party ledger rebuilt: Date | Particulars | Dr | Cr | Balance, fits a phone, opening + totals + closing rows,
+  item/kg/rate in particulars, search party, This month / Last month / FY / All, Print (A4), WhatsApp, CSV.
+- FIX: cash sales and cash purchases no longer go into party ledgers; returns show on the correct side.
+- FIX: editing a payment/purchase from Reports used to delete the entry.
+- FIX: editing a party in Settings flipped a Cr opening to Dr and wiped phone/address. Opening now has a Dr/Cr choice.
+- Reports tabs (Sales, Purchase, Stock, Dues) fit phones with totals. Bottom nav: Home, Bill, Entry, Reports, More.
+- Tap a ledger row for Edit / Delete (works on phone).
+
+# (v3) Full Telegram voice control
+
+## v3 fix
+- When a Gemini model is busy ("high demand"), the bot now tries other Gemini models automatically instead of failing.
 
 Stack: Vite + React on Vercel, data in Supabase, Telegram bot for reports and voice/text entries.
 

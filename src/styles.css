@@ -17,6 +17,7 @@
   --color-primary-fg: #f7f1e6;
   --color-pine: #2f4a43;
   --color-danger: #8f3a2a;
+  --color-danger-fg: #fbf3ee;
   --color-ok: #2c6a4c;
 
   --radius-sm: 8px;
@@ -49,5 +50,34 @@
   input[type="number"]::-webkit-outer-spin-button {
     appearance: none;
     margin: 0;
+  }
+}
+
+
+/* Printing a ledger: plain white A4 page, no app chrome. */
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
+@media print {
+  html,
+  body,
+  #root {
+    background: #fff !important;
+    min-height: 0;
+  }
+  body {
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-row-group;
   }
 }

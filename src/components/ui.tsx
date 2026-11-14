@@ -17,8 +17,10 @@ const buttonVariants = cva(
         primary: "bg-primary text-primary-fg hover:opacity-90",
         coal: "bg-coal text-coal-fg hover:opacity-90",
         outline: "border border-border bg-card text-fg hover:bg-surface",
+        secondary: "border border-border bg-bg text-fg hover:bg-surface",
       },
       size: {
+        sm: "h-9 px-3 text-sm",
         md: "h-11 px-4 text-[0.9375rem]",
         lg: "h-12 px-5 text-base",
       },
