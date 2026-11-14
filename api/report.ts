@@ -16,6 +16,17 @@ export default async function handler(req: any, res: any) {
   const todayStr = new Date(now.getTime() + istOffset).toISOString().split("T")[0];
 
   let message = "";
+  const followUps: { text: string; reply_markup: any }[] = []; // extra messages with buttons (EOD cheque check)
+  const md = (x: any) => String(x ?? "").replace(/[_*`\[\]]/g, " ");          // keep Telegram Markdown from breaking on names
+  const rs = (n: number) => "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n || 0);
+  const dd = (iso: string) => (iso ? new Date(iso.slice(0, 10) + "T00:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }) : "");
+  const html = (x: any) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Post-dated cheques that are due (cheque date today or earlier) and still pending
+  const { data: pdcAll } = await supabase.from("money").select("*").eq("type", "pdc_in").eq("status", "pending");
+  const dueCheques = (pdcAll || [])
+    .filter((c: any) => c.clearanceDate && c.clearanceDate <= todayStr)
+    .sort((a: any, b: any) => String(a.clearanceDate).localeCompare(String(b.clearanceDate)));
 
   if (time === "morning") {
     // === MORNING 9 AM REPORT ===
@@ -69,7 +80,21 @@ export default async function handler(req: any, res: any) {
       if (v.qty <= 500) stockStr += `- ${v.name}: ${v.qty} kg left\n`;
     });
 
+    // D. Deliveries scheduled for today (and any still pending from earlier days)
+    const { data: sched } = await supabase.from("bills").select("*").eq("deliveryStatus", "scheduled");
+    const delLine = (b: any) => `- ${md(b.customerName)}${b.deliveryTime ? " @ " + b.deliveryTime : ""}: ${(b.lines || []).map((l: any) => `${md(l.itemName)} ${l.kg} kg`).join(", ")} (${rs(b.total)})${b.saleType === "prepaid_delivery" ? " · paid" : " · credit"}\n`;
+    const todayDel = (sched || []).filter((b: any) => (b.deliveryDate || b.date) === todayStr).sort((a: any, b: any) => String(a.deliveryTime || "99").localeCompare(String(b.deliveryTime || "99")));
+    const lateDel = (sched || []).filter((b: any) => (b.deliveryDate || b.date) < todayStr).sort((a: any, b: any) => String(a.deliveryDate || a.date).localeCompare(String(b.deliveryDate || b.date)));
+    let deliveryStr = todayDel.map(delLine).join("");
+    if (lateDel.length) deliveryStr += `_Pending from earlier:_\n` + lateDel.map((b: any) => `- ${dd(b.deliveryDate || b.date)} · ` + delLine(b).slice(2)).join("");
+
+    // E. Post-dated cheques to present today
+    const chequeTotal = dueCheques.reduce((t: number, c: any) => t + (c.amount || 0), 0);
+    const chequeStr = dueCheques.map((c: any) => `- ${md(c.partyName)}: ${rs(c.amount)} · chq ${md(c.chequeNumber || "-")} · dated ${dd(c.clearanceDate)}${c.clearanceDate < todayStr ? " (overdue)" : ""}\n`).join("");
+
     message = `🌅 *Morning Priority Report*\n\n` +
+              `🚚 *Deliveries Scheduled Today${todayDel.length ? ` (${todayDel.length})` : ""}*\n${deliveryStr || "None today\n"}\n` +
+              `🏛 *Cheques To Present Today${dueCheques.length ? ` (${rs(chequeTotal)})` : ""}*\n${chequeStr || "None today\n"}\n` +
               `🏦 *Cash & Bank Balances*\n${cashBankStr || "No data\n"}\n` +
               `⚠️ *Delayed Payments*\n${delayedStr || "None! All good.\n"}\n` +
               `😴 *Customers Not Buying*\n${inactiveStr || "None\n"}\n` +
@@ -127,7 +152,25 @@ export default async function handler(req: any, res: any) {
               `💰 *Total Cash / Advance Received:* ₹${cashSaleTotal}\n\n` +
               `📈 *Item-wise Sales Today*\n${saleStr || "No sales today\n"}\n` +
               `🛒 *Item-wise Purchases Today*\n${purStr || "No purchases today\n"}\n` +
-              `💸 *Ledger Today*  In ₹${recd} | Out ₹${paid} | Exp ₹${exp}\n${moneyStr || "No payments today\n"}`;
+              `💸 *Ledger Today*  In ₹${recd} | Out ₹${paid} | Exp ₹${exp}\n${moneyStr || "No payments today\n"}` +
+              (dueCheques.length ? `\n🏛 *${dueCheques.length} cheque${dueCheques.length > 1 ? "s" : ""} were due today* — please answer below 👇\n` : "");
+
+    // Ask about every due cheque: deposited (pick the bank) or not yet (move to the next bank day).
+    // The buttons are handled by api/telegram.ts (callback data "qb:" / "qn:").
+    if (dueCheques.length) {
+      const { data: accs } = await supabase.from("accounts").select("*");
+      const sorted = (accs || []).slice().sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
+      const banks = sorted.filter((a: any) => a.type === "bank");
+      const choices = (banks.length ? banks : sorted).slice(0, 6);
+      for (const c of dueCheques.slice(0, 20)) {
+        const kb: any[][] = choices.map((a: any, i: number) => [{ text: `✅ Yes — deposited in ${a.name}`, callback_data: `qb:${c.id}:${i}` }]);
+        kb.push([{ text: "📅 Not yet — move to next bank day", callback_data: `qn:${c.id}` }]);
+        followUps.push({
+          text: `🏛 <b>Cheque due</b>\n👤 ${html(c.partyName)}\n💰 <b>${rs(c.amount)}</b> · chq ${html(c.chequeNumber || "-")} · dated ${dd(c.clearanceDate)}\n\n<b>Was it presented in the bank today?</b>`,
+          reply_markup: { inline_keyboard: kb },
+        });
+      }
+    }
   }
 
   // 3. Telegram ko message bhej do
@@ -144,6 +187,13 @@ export default async function handler(req: any, res: any) {
         parse_mode: "Markdown"
       })
     });
+    for (const f of followUps) {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: f.text, parse_mode: "HTML", reply_markup: f.reply_markup })
+      });
+    }
   }
 
   res.status(200).json({ success: true, message: "Report sent to Telegram!" });

@@ -819,10 +819,65 @@ async function confirmOne(row: any, m: M): Promise<{ ok: boolean; text: string }
   catch (e: any) { await db.from("tg_drafts").update({ status: "failed", result: { error: e.message } }).eq("id", row.id); return { ok: false, text: e.message }; }
 }
 
+// Next day banks are open: skips Sundays and 2nd / 4th Saturdays (other bank holidays: just tap "Not yet" again).
+function nextBankDay(fromIso: string): string {
+  const d = new Date(fromIso + "T00:00:00Z");
+  for (let k = 0; k < 10; k++) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const dow = d.getUTCDay(), nth = Math.ceil(d.getUTCDate() / 7);
+    if (dow === 0) continue;
+    if (dow === 6 && (nth === 2 || nth === 4)) continue;
+    break;
+  }
+  return d.toISOString().slice(0, 10);
+}
+const longDate = (iso: string) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+// Buttons under the EOD report's "Cheque due" messages (sent by api/report.ts)
+async function onChequeCheck(chat: any, mid: number, op: string, moneyId: string, idx: string) {
+  const { data: c } = await db.from("money").select("*").eq("id", moneyId).single();
+  if (!c || c.type !== "pdc_in") return edit(chat, mid, "This cheque entry no longer exists.");
+  const head = `🏛 ${esc(c.partyName)} · ${inr(c.amount)} · chq ${esc(c.chequeNumber || "-")}`;
+  if (c.status !== "pending") return edit(chat, mid, `${head}\n✅ Already marked cleared.`);
+
+  if (op === "qn") {
+    const next = nextBankDay(istToday());
+    await must(db.from("money").update({ clearanceDate: next }).eq("id", moneyId).eq("status", "pending"), "Reschedule");
+    return edit(chat, mid, `${head}\n📅 Not presented. Moved to <b>${longDate(next)}</b> — it will be in that morning's report and I will ask again that evening.`);
+  }
+
+  const { data: accs } = await db.from("accounts").select("*");
+  const sorted = (accs || []).slice().sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
+  const banks = sorted.filter((a: any) => a.type === "bank");
+  const acc = (banks.length ? banks : sorted)[Number(idx)];
+  if (!acc) return edit(chat, mid, `${head}\n⚠️ That bank account was not found. Say "${esc(c.partyName)} cheque cleared in <bank>" instead.`);
+
+  const { data: lock } = await db.from("money").update({ status: "cleared", accountId: acc.id }).eq("id", moneyId).eq("status", "pending").select("id");
+  if (!lock?.length) return edit(chat, mid, `${head}\n✅ Already marked cleared.`);
+  await adjAccount(acc.id, c.amount);
+  if (c.partyId) await adjParty(c.partyId, -c.amount);
+
+  // keep a record so "undo" can reverse it
+  const draft = {
+    act: "clear_cheque", date: istToday(), amount: c.amount, partyId: c.partyId || null, partyName: c.partyName || "", heardParty: null, partyCandidates: [],
+    mode: acc.id, lines: [], deliveryCharge: 0, deliveryDate: null, notes: "", heard: "", chequeNo: c.chequeNumber || "", clearanceDate: c.clearanceDate || "",
+    itemId: null, heardItem: null, accountId: null, heardAccount: null, entryType: null,
+    target: { table: "money", id: c.id, label: `${c.partyName} · chq ${c.chequeNumber || "-"} · ${inr(c.amount)}` }, targets: [], master: {},
+  };
+  await db.from("tg_drafts").insert({ chat_id: String(chat), status: "done", source: "eod", draft, result: { kind: "cheque_clear", id: c.id, accountId: acc.id, partyId: c.partyId || null, amount: c.amount } });
+
+  let after = "";
+  if (c.partyId) { const { data: p } = await db.from("parties").select("name,currentBalance").eq("id", c.partyId).single(); if (p) after += `\n⚖️ ${esc(p.name)}: <b>${drcr(p.currentBalance || 0)}</b>`; }
+  const { data: a2 } = await db.from("accounts").select("name,balance").eq("id", acc.id).single();
+  if (a2) after += `\n🏦 ${esc(a2.name)}: ${inr(a2.balance || 0)}`;
+  return edit(chat, mid, `${head}\n✅ <b>Cleared into ${esc(acc.name)}</b>${after}\n\nSay <i>undo</i> to reverse.`);
+}
+
 async function onCallback(cq: any) {
   const chat = cq.message?.chat?.id, mid = cq.message?.message_id;
   const [op, idStr, a1, a2] = String(cq.data || "").split(":"); const id = Number(idStr);
   await tg("answerCallbackQuery", { callback_query_id: cq.id });
+  if (op === "qb" || op === "qn") return onChequeCheck(chat, mid, op, idStr, a1);
   const { data: row } = await db.from("tg_drafts").select("*").eq("id", id).single();
   if (!row || row.chat_id !== String(chat)) return edit(chat, mid, "This draft no longer exists.");
 
@@ -904,7 +959,7 @@ export default async function handler(req: any, res: any) {
         { command: "cheques", description: "Pending cheques" }, { command: "parties", description: "All party balances" }, { command: "undo", description: "Undo last entry" }] });
       const t = await db.from("tg_drafts").select("id").limit(1);
       return res.status(200).json({
-        version: "v3",
+        version: "v6",
         webhook: r?.ok ? "OK → " + url : r,
         gemini_key: GEMINI_KEY ? "set" : "MISSING (add GEMINI_API_KEY)",
         service_role_key: process.env.SUPABASE_SERVICE_ROLE_KEY ? "set" : "MISSING (add SUPABASE_SERVICE_ROLE_KEY)",
@@ -912,7 +967,7 @@ export default async function handler(req: any, res: any) {
         tg_drafts_table: t.error ? "NOT REACHABLE — " + t.error.message : "OK",
       });
     }
-    return res.status(200).send("UCD Telegram webhook v3 is alive.");
+    return res.status(200).send("UCD Telegram webhook v6 is alive.");
   }
   if (req.headers["x-telegram-bot-api-secret-token"] !== WEBHOOK_SECRET) return res.status(401).send("no");
   const update = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
