@@ -11,7 +11,7 @@ export const config = { maxDuration: 60 };
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.VITE_TELEGRAM_BOT_TOKEN || "";
 const OWNER_IDS = (process.env.TELEGRAM_CHAT_ID || process.env.VITE_TELEGRAM_CHAT_ID || "").split(",").map((s) => s.trim()).filter(Boolean);
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_MODELS = [process.env.GEMINI_MODEL, "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"].filter(Boolean) as string[];
+const GEMINI_MODELS = [...new Set([process.env.GEMINI_MODEL, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.0-flash"].filter(Boolean) as string[])];
 const LIVE_FROM = "2026-09-01";
 const WEBHOOK_SECRET = createHash("sha256").update("ucd-webhook:" + BOT_TOKEN).digest("hex").slice(0, 48);
 
@@ -161,13 +161,24 @@ Field formats: amount/rates/balances are numbers in rupees (50 hazaar=50000, 1 l
   if (input.text) parts.push({ text: "Owner says: " + input.text });
 
   let lastErr = "";
-  for (const model of GEMINI_MODELS) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json", temperature: 0 } }),
-    });
+  const started = Date.now();
+  // busy/overloaded models are common: try every model, then a second round after a short pause
+  for (const round of [0, 1]) for (const model of GEMINI_MODELS) {
+    if (Date.now() - started > 45000) break;
+    if (round === 1 && model === GEMINI_MODELS[0]) await new Promise((ok) => setTimeout(ok, 2000));
+    let r: Response;
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(20000),
+        body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json", temperature: 0 } }),
+      });
+    } catch (e: any) { lastErr = `${model}: ${e?.message || "timeout"}`; continue; }
     const j: any = await r.json().catch(() => ({}));
-    if (!r.ok) { lastErr = `${model}: ${j?.error?.message || r.status}`; if (r.status === 404 || r.status === 400) continue; throw new Error("AI error: " + lastErr); }
+    if (!r.ok) {
+      lastErr = `${model}: ${j?.error?.message || r.status}`;
+      if (r.status === 401 || r.status === 403) throw new Error("Gemini key rejected: " + lastErr);
+      continue; // busy / not found / overloaded → try next model
+    }
     const txt = (j?.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || "").join("");
     try {
       const o = JSON.parse(txt.replace(/```json|```/g, "").trim());
@@ -176,7 +187,7 @@ Field formats: amount/rates/balances are numbers in rupees (50 hazaar=50000, 1 l
       return o;
     } catch { throw new Error("AI reply was not readable. Please say it again."); }
   }
-  throw new Error("AI error: " + lastErr);
+  throw new Error("AI is busy right now, please send again in a minute. (" + lastErr + ")");
 }
 
 // ---------- resolving ----------
@@ -893,7 +904,7 @@ export default async function handler(req: any, res: any) {
         { command: "cheques", description: "Pending cheques" }, { command: "parties", description: "All party balances" }, { command: "undo", description: "Undo last entry" }] });
       const t = await db.from("tg_drafts").select("id").limit(1);
       return res.status(200).json({
-        version: "v2",
+        version: "v3",
         webhook: r?.ok ? "OK → " + url : r,
         gemini_key: GEMINI_KEY ? "set" : "MISSING (add GEMINI_API_KEY)",
         service_role_key: process.env.SUPABASE_SERVICE_ROLE_KEY ? "set" : "MISSING (add SUPABASE_SERVICE_ROLE_KEY)",
@@ -901,7 +912,7 @@ export default async function handler(req: any, res: any) {
         tg_drafts_table: t.error ? "NOT REACHABLE — " + t.error.message : "OK",
       });
     }
-    return res.status(200).send("UCD Telegram webhook v2 is alive.");
+    return res.status(200).send("UCD Telegram webhook v3 is alive.");
   }
   if (req.headers["x-telegram-bot-api-secret-token"] !== WEBHOOK_SECRET) return res.status(401).send("no");
   const update = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
